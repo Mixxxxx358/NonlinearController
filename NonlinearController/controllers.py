@@ -1,6 +1,6 @@
 import numpy as np
 from NonlinearController.mpc_utils import *
-from systems import LTI
+from NonlinearController.systems import LTI
 from matplotlib import pyplot as plt
 from casadi import *
 from NonlinearController.model_utils import *
