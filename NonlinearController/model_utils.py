@@ -51,3 +51,35 @@ def CasADi_Fn(ss_enc, cas_x, cas_u):
     nn_Lin = mtimes(W_Lin,cas_xu) + b_Lin
 
     return nn_NL + nn_Lin
+
+def denorm_input(u, norm):
+    w = u*norm.ustd + norm.u0
+    
+    #make sure that shape is preserved
+    assert w.shape == u.shape
+
+    return w
+
+def norm_input(w, norm):
+    u = (w - norm.u0)/norm.ustd
+
+    #make sure that shape is preserved
+    assert w.shape == u.shape
+
+    return u
+
+def denorm_output(y, norm):
+    z = y*norm.ystd + norm.y0
+
+    #make sure that shape is preserved
+    assert z.shape == y.shape
+
+    return z
+
+def norm_output(z, norm):
+    y = (z - norm.y0)/norm.ystd
+
+    #make sure that shape is preserved
+    assert z.shape == y.shape
+
+    return y
