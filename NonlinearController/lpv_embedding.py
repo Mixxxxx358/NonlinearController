@@ -1,7 +1,7 @@
 import deepSI
 import numpy as np
 from casadi import *
-from model_utils import *
+from NonlinearController.model_utils import *
 from matplotlib import pyplot as plt
 
 def lambda_trap(x0,dx,u0,du,nx,nu,ny,Jfx,Jfu,Jhx,stages):
@@ -26,9 +26,8 @@ def lambda_trap(x0,dx,u0,du,nx,nu,ny,Jfx,Jfu,Jhx,stages):
             
     return A,B,C
 
-if __name__=='__main__':
-    model = deepSI.load_system("NonlinearController/trained_models/unbalanced/ObserverUnbalancedDisk_dt01_nab_4_SNR_30_e250")
-
+def velocity_lpv_embedding(model, n_stages=20):
+    '''Takes veocity ss encoder model and outputs velocity lpv embedded CasADi functions for A,B,C'''
     # declared sym variables
     nx = model.nx
     n_states = nx
@@ -53,12 +52,28 @@ if __name__=='__main__':
     du = MX.sym("du",nu,1)
     u0 = MX.sym("u0",nu,1)
 
-    n_stages = 20
     [A_sym, B_sym, C_sym] = lambda_trap(x0,dx,u0,du,nx,nu,ny,Jfx,Jfu,Jhx,n_stages)
     get_A = Function("get_A",[x0,dx,u0,du],[A_sym])
     get_B = Function("get_B",[x0,dx,u0,du],[B_sym])
     get_C = Function("get_C",[x0,dx,u0,du],[C_sym])
 
+    return get_A, get_B, get_C
+
+
+
+if __name__=='__main__':
+    model = deepSI.load_system("NonlinearController/trained_models/unbalanced/ObserverUnbalancedDisk_dt01_nab_4_SNR_30_e250")
+
+    get_A, get_B, get_C = velocity_lpv_embedding(model)
+
+    nx = model.nx
+    n_states = nx
+    x = MX.sym("x",nx,1)
+    nu = model.nu if model.nu is not None else 1
+    n_controls = nu
+    u = MX.sym("u",nu,1)
+    ny = model.ny if model.ny is not None else 1
+    
     A = np.zeros((nx,nx))
     B = np.zeros((nx,nu))
     C = np.zeros((ny,nx))
