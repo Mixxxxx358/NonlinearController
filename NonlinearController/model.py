@@ -111,9 +111,18 @@ class SS_encoder_velocity_from(SS_encoder_general_hf):
         self.encoder = self.e_net(nb=self.nb+nb_right, nu=nu, na=self.na+na_right, ny=ny, nx=self.nx0, **self.e_net_kwargs)
         self.hfn = self.hf_net(nx=self.nx0, nu=nu, ny=ny, **self.hf_net_kwargs)
 
-sys = SS_encoder_velocity_from(nx=2, na=5, nb=5)
-train, test = deepSI.datasets.Silverbox()
+
+import system
+
+u = deepSI.deepSI.exp_design.multisine(100000, pmax=49999, n_crest_factor_optim=20)
+u = np.clip(u*1.5, -3, 3)
+setup = system.UnbalancedDisc(dt=0.1, sigma_n=[0.014])
+data = setup.apply_experiment(deepSI.System_data(u=u))
+
+#train, test = deepSI.datasets.Silverbox()
+train, test = data.train_test_split(split_fraction=0.2)
 train, val = train.train_test_split(0.1)
 
-sys.fit(train, val, loss_kwargs=dict(nf=80))
-sys.save_system('velocity-form/silverbox-test-sys')
+sys = SS_encoder_velocity_from(nx=2, na=5, nb=5)
+sys.fit(train, val, epochs=1, loss_kwargs=dict(nf=80))
+#sys.save_system('velocity-form/unbalanced-test-sys')
