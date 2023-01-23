@@ -2,6 +2,7 @@
 /deepSI.egg-info/
 __pycache__/
 /build/
+trained_models/
 
 ## ignore hidden files!
 .*
