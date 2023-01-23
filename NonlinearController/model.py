@@ -112,11 +112,11 @@ class SS_encoder_velocity_from(SS_encoder_general_hf):
         self.hfn = self.hf_net(nx=self.nx0, nu=nu, ny=ny, **self.hf_net_kwargs)
 
 
-import system
+import systems
 
 u = deepSI.deepSI.exp_design.multisine(100000, pmax=49999, n_crest_factor_optim=20)
 u = np.clip(u*1.5, -3, 3)
-setup = system.UnbalancedDisc(dt=0.1, sigma_n=[0.014])
+setup = systems.UnbalancedDisc(dt=0.1, sigma_n=[0.014])
 data = setup.apply_experiment(deepSI.System_data(u=u))
 
 #train, test = deepSI.datasets.Silverbox()
