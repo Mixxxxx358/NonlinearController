@@ -15,9 +15,7 @@ def velocity_lambda_trap(x0,dx,u0,du,nx,nu,ny,Jfx,Jfu,Jhx,stages):
     lambda0 = 0
     dlam = 1/stages
 
-    #x = lambda lam: x0 + lam*dx
     x = lambda lam: -(dx - x0) + lam*dx
-    #u = lambda lam: u0 + lam*du
     u = lambda lam: -(du - u0) + lam*du
 
     for i in np.arange(stages):
