@@ -15,8 +15,10 @@ def velocity_lambda_trap(x0,dx,u0,du,nx,nu,ny,Jfx,Jfu,Jhx,stages):
     lambda0 = 0
     dlam = 1/stages
 
-    x = lambda lam: x0 + lam*dx
-    u = lambda lam: u0 + lam*du
+    #x = lambda lam: x0 + lam*dx
+    x = lambda lam: -(dx - x0) + lam*dx
+    #u = lambda lam: u0 + lam*du
+    u = lambda lam: -(du - u0) + lam*du
 
     for i in np.arange(stages):
         A = A + dlam*1/2*(Jfx(x(lambda0), u(lambda0)) + Jfx(x(lambda0+dlam), u(lambda0+dlam)))
@@ -112,3 +114,29 @@ def velocity_lpv_embedding(model, n_stages=20):
     lpv_C = Function("get_C",[x0,dx,u0,du],[C_sym])
 
     return lpv_A, lpv_B, lpv_C
+
+class velocity_lpv_embedder():
+    def __init__(self, ss_enc, Nc, n_stages=20):
+        self.nx = ss_enc.nx
+        self.nu = ss_enc.nu if ss_enc.nu is not None else 1
+        self.ny = ss_enc.ny if ss_enc.ny is not None else 1
+
+        self.Nc = Nc
+
+        self.lpv_A, self.lpv_B, self.lpv_C = velocity_lpv_embedding(ss_enc,n_stages=n_stages)
+        self.lpv_A_Nc = self.lpv_A.map(self.Nc, "thread", 32)
+        self.lpv_B_Nc = self.lpv_B.map(self.Nc, "thread", 32)
+        self.lpv_C_Nc = self.lpv_C.map(self.Nc, "thread", 32)
+
+    def __call__(self, dX, x_1, dU, u_1):
+        list_A = np.zeros([self.Nc*self.nx, self.nx])
+        list_B = np.zeros([self.Nc*self.nx, self.nu])
+        list_C = np.zeros([self.Nc*self.ny, self.nx])
+
+        X_1 = np.zeros((self.nx,self.Nc))
+        X_1[:,0] = x_1
+
+        for i in range(self.Nc):
+            X_1[:,i] = dX[i,:]
+
+        return list_A, list_B, list_C
