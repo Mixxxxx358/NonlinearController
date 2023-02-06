@@ -29,3 +29,11 @@ class UnbalancedDisc(deepSI.System_deriv):
 
     def h(self,x,u):
         return x[1] + np.random.normal(0, self.sigma_n[0])
+    
+class SinCosUnbalancedDisc(UnbalancedDisc):
+    def __init__(self, dt=0.025, sigma_n=[0]):
+        super(SinCosUnbalancedDisc, self).__init__(dt=dt, sigma_n=sigma_n)
+
+    def h(self,x,u):
+        measurement = x[1] + np.random.normal(0, self.sigma_n[0])
+        return np.sin(measurement), np.cos(measurement)

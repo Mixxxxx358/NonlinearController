@@ -116,7 +116,7 @@ import systems
 
 u = deepSI.deepSI.exp_design.multisine(100000, pmax=49999, n_crest_factor_optim=20)
 u = np.clip(u*1.5, -3, 3)
-setup = systems.UnbalancedDisc(dt=0.1, sigma_n=[0.014])
+setup = systems.SinCosUnbalancedDisc(dt=0.1, sigma_n=[0])
 data = setup.apply_experiment(deepSI.System_data(u=u))
 
 #train, test = deepSI.datasets.Silverbox()
@@ -126,5 +126,6 @@ train, val = train.train_test_split(0.1)
 # sys = SS_encoder_velocity_from(nx=2, na=5, nb=5)
 sys = deepSI.fit_systems.SS_encoder_general(nx=2, na=4, nb=4, na_right=1)
 # sys.fit(train, val, epochs=1, loss_kwargs=dict(nf=80))
-sys.fit(train_sys_data=train, val_sys_data=val, epochs=500, batch_size=256, loss_kwargs={'nf':150})
-sys.save_system('velocity-form/unbalanced-test-sys')
+sys.fit(train_sys_data=train, val_sys_data=val, epochs=1, batch_size=256, loss_kwargs={'nf':150})
+#sys.save_system('velocity-form/unbalanced-test-sys')
+sys.save_system('NonlinearController/trained_models/sincos/sincos-test-sys')
