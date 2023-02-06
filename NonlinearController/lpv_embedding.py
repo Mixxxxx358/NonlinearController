@@ -126,15 +126,30 @@ class velocity_lpv_embedder():
         self.lpv_B_Nc = self.lpv_B.map(self.Nc, "thread", 32)
         self.lpv_C_Nc = self.lpv_C.map(self.Nc, "thread", 32)
 
-    def __call__(self, dX, x_1, dU, u_1):
+    def __call__(self, X, U):
+        X_1 = np.hstack(np.split(X[:-self.nx],self.Nc))
+        dX0 = np.hstack(np.split(X[self.nx:] - X[:-self.nx],self.Nc))
+        U_1 = np.hstack(np.split(U[:-self.nu],self.Nc))
+        dU0 = np.hstack(np.split(U[self.nu:] - U[:-self.nu],self.Nc))
+        
+        pA = self.lpv_A_Nc(X_1, dX0, U_1, dU0)
+        pB = self.lpv_B_Nc(X_1, dX0, U_1, dU0)
+        pC = self.lpv_C_Nc(X_1, dX0, U_1, dU0)
+
+        return self.reshapeEmbedding(pA, pB, pC)
+
+    def reshapeEmbedding(self, pA,pB,pC):
         list_A = np.zeros([self.Nc*self.nx, self.nx])
         list_B = np.zeros([self.Nc*self.nx, self.nu])
         list_C = np.zeros([self.Nc*self.ny, self.nx])
 
-        X_1 = np.zeros((self.nx,self.Nc))
-        X_1[:,0] = x_1
+        for i in range(self.Nc):
+            list_A[(self.nx*i):(self.nx*i+self.nx),:] = pA[:,i*self.nx:(i+1)*self.nx]
 
         for i in range(self.Nc):
-            X_1[:,i] = dX[i,:]
+            list_B[(self.nx*i):(self.nx*i+self.nx),:] = pB[:,i*self.nu:(i+1)*self.nu]
+
+        for i in range(self.Nc):
+            list_C[(self.ny*i):(self.ny*i+self.ny),:] = pC[:,i*self.nx:(i+1)*self.nx]
 
         return list_A, list_B, list_C
