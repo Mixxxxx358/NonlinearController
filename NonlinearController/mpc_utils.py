@@ -32,3 +32,27 @@ def get_Psi(Nc, R):
 def get_Omega(Nc, Q):
     '''Return kronecker product of Q and Identity of size Nc'''
     return np.kron(np.eye(Nc), Q)
+
+def getDEMc(y_min, y_max, u_min, u_max, Nc, ny, nu):
+    bi = np.array([list(itertools.chain([-u_min, u_max], [y*-1 for y in y_min],  y_max))])
+    bN = np.array([list(itertools.chain([y*-1 for y in y_min],  y_max))])
+    c = np.hstack((np.tile(bi, Nc), bN)).T
+
+    In = np.eye(ny)
+    Im = np.eye(nu)
+    Zn = np.zeros((nu,ny))
+    Zm = np.zeros((ny,nu))
+
+    Mi = np.vstack((Zn, Zn, -In, In))
+    Mn = np.vstack((-In, In))
+    M = (np.zeros((Nc*2*(ny+nu)+2*ny, Nc*ny)))
+    M[Nc*2*(ny+nu):,(Nc-1)*ny:] = Mn
+    M[2*(ny+nu):Nc*2*(ny+nu),:(Nc-1)*ny] = np.kron(np.eye(Nc-1), Mi)
+
+    Ei = np.vstack((-Im, Im, Zm, Zm))
+    E = np.vstack((np.kron(np.eye(Nc), Ei), np.zeros((ny*2, Nc*nu))))
+
+    D = np.zeros((Nc*2*(ny+nu)+2*ny, ny))
+    D[:2*(ny+nu),:] = Mi
+
+    return D, E, M, c
