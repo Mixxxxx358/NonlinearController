@@ -4,6 +4,7 @@ __pycache__/
 /build/
 trained_models/
 references/
+experiments/
 
 ## ignore hidden files!
 .*
