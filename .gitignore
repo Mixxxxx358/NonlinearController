@@ -5,6 +5,8 @@ __pycache__/
 trained_models/
 references/
 experiments/
+Figures/
+.ipynb_checkpoints
 
 ## ignore hidden files!
 .*
