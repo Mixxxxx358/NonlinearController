@@ -31,7 +31,6 @@ class Matrix_NN(nn.Module):
         net_out = self.net(net_in).reshape(x.shape[0], self.n_rows, self.n_columns)
         return net_out/self.norm
 
-
 class Velocity_from_net(nn.Module):
     def __init__(self, nx, nu, ny, feedthrough=False, F_net=Matrix_NN, F_net_kwargs={'norm':10}, \
                                                       G_net=Matrix_NN, G_net_kwargs={'norm':10},\
@@ -111,21 +110,57 @@ class SS_encoder_velocity_from(SS_encoder_general_hf):
         self.encoder = self.e_net(nb=self.nb+nb_right, nu=nu, na=self.na+na_right, ny=ny, nx=self.nx0, **self.e_net_kwargs)
         self.hfn = self.hf_net(nx=self.nx0, nu=nu, ny=ny, **self.hf_net_kwargs)
 
-
 import systems
 
-u = deepSI.deepSI.exp_design.multisine(100000, pmax=49999, n_crest_factor_optim=20)
-u = np.clip(u*1.5, -3, 3)
+class sincos_output_net(nn.Module):
+    def __init__(self, nx, ny, nu=-1, n_nodes_per_layer=64, n_hidden_layers=2, activation=nn.Tanh):
+        super(sincos_output_net, self).__init__()
+        from deepSI.utils import simple_res_net
+        self.ny = tuple() if ny is None else ((ny,) if isinstance(ny,int) else ny)
+        self.feedthrough = nu!=-1
+        if self.feedthrough:
+            self.nu = tuple() if nu is None else ((nu,) if isinstance(nu,int) else nu)
+            net_in = nx + np.prod(self.nu, dtype=int)
+        else:
+            net_in = nx
+        self.net = simple_res_net(n_in=net_in, n_out=np.prod((1,),dtype=int), n_nodes_per_layer=n_nodes_per_layer, \
+            n_hidden_layers=n_hidden_layers, activation=activation)
+
+    def forward(self, x, u=None):
+        xu = x
+        xu = self.net(xu).view(*((x.shape[0],)+(1,)))
+        y = torch.cat([torch.sin(xu), torch.cos(xu)], dim=1)
+        return y
+
+class SinCos_encoder(deepSI.fit_systems.SS_encoder_general):
+    def __init__(self, nx=10, na=20, nb=20, na_right=0, nb_right=0):
+        super(SinCos_encoder, self).__init__(nx=nx, na=na, nb=nb, na_right=na_right, nb_right=nb_right)
+        self.h_net = sincos_output_net
+
+    def init_nets(self, nu, ny): # a bit weird
+        na_right = self.na_right if hasattr(self,'na_right') else 0
+        nb_right = self.nb_right if hasattr(self,'nb_right') else 0
+        self.encoder = self.e_net(nb=(self.nb+nb_right), nu=nu, na=(self.na+na_right), ny=ny, nx=self.nx, **self.e_net_kwargs)
+        self.fn =      self.f_net(nx=self.nx, nu=nu,                                **self.f_net_kwargs)
+        if self.feedthrough:
+            self.hn =      self.h_net(nx=self.nx, ny=ny, nu=nu,                     **self.h_net_kwargs) 
+        else:
+            self.hn =      self.h_net(nx=self.nx, ny=ny,                            **self.h_net_kwargs)
+
+
+u = deepSI.deepSI.exp_design.multisine(100000, pmax=40000, n_crest_factor_optim=20)
+u = np.clip(u*3, -6, 6)
 setup = systems.SinCosUnbalancedDisc(dt=0.1, sigma_n=[0])
 data = setup.apply_experiment(deepSI.System_data(u=u))
 
 #train, test = deepSI.datasets.Silverbox()
 train, test = data.train_test_split(split_fraction=0.2)
-train, val = train.train_test_split(0.1)
+train, val = train.train_test_split(split_fraction=0.25)
 
 # sys = SS_encoder_velocity_from(nx=2, na=5, nb=5)
-sys = deepSI.fit_systems.SS_encoder_general(nx=2, na=4, nb=4, na_right=1)
+sys = SinCos_encoder(nx=2, na=4, nb=4, na_right=1)
+# sys = deepSI.fit_systems.SS_encoder_general(nx=2, na=4, nb=4, na_right=1)
 # sys.fit(train, val, epochs=1, loss_kwargs=dict(nf=80))
-sys.fit(train_sys_data=train, val_sys_data=val, epochs=1, batch_size=256, loss_kwargs={'nf':150})
+sys.fit(train_sys_data=train, val_sys_data=val, epochs=10, batch_size=256, loss_kwargs={'nf':15})
 #sys.save_system('velocity-form/unbalanced-test-sys')
 sys.save_system('NonlinearController/trained_models/sincos/sincos-test-sys')
