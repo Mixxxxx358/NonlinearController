@@ -3,6 +3,8 @@ import numpy as np
 from casadi import *
 from NonlinearController.model_utils import *
 from matplotlib import pyplot as plt
+from functorch import jacrev, jacfwd, vmap
+import torch
 
 def velocity_lambda_trap(x0,dx,u0,du,nx,nu,ny,Jfx,Jfu,Jhx,stages):
     # FUNCTION LAMBDA_SIMPSON
@@ -15,8 +17,11 @@ def velocity_lambda_trap(x0,dx,u0,du,nx,nu,ny,Jfx,Jfu,Jhx,stages):
     lambda0 = 0
     dlam = 1/stages
 
-    x = lambda lam: -(dx - x0) + lam*dx
-    u = lambda lam: -(du - u0) + lam*du
+    x = lambda lam: x0 + lam*dx
+    u = lambda lam: u0 + lam*du
+
+    # x = lambda lam: -(dx - x0) + lam*dx
+    # u = lambda lam: -(du - u0) + lam*du
 
     for i in np.arange(stages):
         A = A + dlam*1/2*(Jfx(x(lambda0), u(lambda0)) + Jfx(x(lambda0+dlam), u(lambda0+dlam)))
@@ -151,5 +156,61 @@ class velocity_lpv_embedder():
 
         for i in range(self.Nc):
             list_C[(self.ny*i):(self.ny*i+self.ny),:] = pC[:,i*self.nx:(i+1)*self.nx]
+
+        return list_A, list_B, list_C
+    
+class velocity_lpv_embedder_autograd():
+    def __init__(self, ss_enc, Nc, n_stages=20):
+        self.nx = ss_enc.nx
+        self.nu = ss_enc.nu if ss_enc.nu is not None else 1
+        self.ny = ss_enc.ny if ss_enc.ny is not None else 1
+
+        self.Nc = Nc
+        self.dlam = 1/n_stages
+
+        self.JacF = vmap(jacrev(ss_enc.fn, argnums=(0,1)))
+        self.JacH = vmap(jacrev(ss_enc.hn))
+
+        self.mult_fA = torch.from_numpy(np.tile(np.vstack((np.ones((1,self.nx,self.nx)), 4*np.ones((1,self.nx,self.nx)), np.ones((1,self.nx,self.nx)))),(n_stages*Nc,1,1)))*self.dlam/6
+        self.mult_fB = torch.from_numpy(np.tile(np.vstack((np.ones((1,self.nx,self.nu)), 4*np.ones((1,self.nx,self.nu)), np.ones((1,self.nx,self.nu)))),(n_stages*Nc,1,1)))*self.dlam/6
+        self.mult_fC = torch.from_numpy(np.tile(np.vstack((np.ones((1,self.ny,self.nx)), 4*np.ones((1,self.ny,self.nx)), np.ones((1,self.ny,self.nx)))),(n_stages*Nc,1,1)))*self.dlam/6
+
+        self.Lambda = np.array([])
+        lambda0 = 0
+        for i in np.arange(n_stages):
+            self.Lambda = np.hstack((self.Lambda, lambda0, lambda0 + self.dlam/2, lambda0 + self.dlam)) # Simpson
+            lambda0 = lambda0 + self.dlam
+        n_int_comp = 3
+        self.batch_size = Nc*n_stages*n_int_comp
+
+    def __call__(self, X, U):
+        X_1 = np.hstack(np.split(X[:-self.nx],self.Nc))
+        dX0 = np.hstack(np.split(X[self.nx:] - X[:-self.nx],self.Nc))
+        U_1 = np.hstack(np.split(U[:-self.nu],self.Nc))
+        dU0 = np.hstack(np.split(U[self.nu:] - U[:-self.nu],self.Nc))
+
+        Xlam = np.kron(dX0, self.Lambda) + np.kron(X_1, np.ones(self.Lambda.shape))
+        Ulam = np.kron(dU0, self.Lambda) + np.kron(U_1, np.ones(self.Lambda.shape))
+
+        x_tens = torch.reshape(torch.Tensor(Xlam[np.newaxis].T),(self.batch_size,1,2))
+        u_tens = torch.reshape(torch.Tensor(Ulam[np.newaxis].T),(self.batch_size,1,1))
+
+        fA, fB = self.JacF(x_tens,u_tens)
+        fC = self.JacH(x_tens)
+
+        return self.reshapeEmbedding(fA, fB, fC)
+
+    def reshapeEmbedding(self, fA,fB,fC):
+        list_A = np.zeros([self.Nc*self.nx, self.nx])
+        list_B = np.zeros([self.Nc*self.nx, self.nu])
+        list_C = np.zeros([self.Nc*self.ny, self.nx])
+
+        tempA = torch.tensor_split(torch.mul(fA.view((self.batch_size,self.nx,self.nx)), self.mult_fA).detach(), self.Nc)
+        tempB = torch.tensor_split(torch.mul(fB.view((self.batch_size,self.nx,self.nu)), self.mult_fB).detach(), self.Nc)
+        tempC = torch.tensor_split(torch.mul(fC.view((self.batch_size,self.ny,self.nx)), self.mult_fC).detach(), self.Nc)
+        for i in range(self.Nc):
+            list_A[self.nx*(i):self.nx*(i+1),:] = torch.sum(tempA[i], axis=0).numpy()
+            list_B[self.nx*(i):self.nx*(i+1),:] = torch.sum(tempB[i], axis=0).numpy()
+            list_C[self.ny*(i):self.ny*(i+1),:] = torch.sum(tempC[i], axis=0).numpy()
 
         return list_A, list_B, list_C
