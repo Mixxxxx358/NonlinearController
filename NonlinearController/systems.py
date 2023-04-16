@@ -28,7 +28,13 @@ class UnbalancedDisc(deepSI.System_deriv):
         return [dz1,dz2]
 
     def h(self,x,u):
-        return x[1] + np.random.normal(0, self.sigma_n[0])
+        p = x[1]
+        return (p+np.pi)%(2*np.pi) - np.pi
+        # return x[1] + np.random.normal(0, self.sigma_n[0])
+    
+    # def reset_state(self):
+        # self.x = np.zeros((self.nx,) if isinstance(self.nx,int) else self.nx)
+        # self.x = np.array([np.pi,0])
     
 class SinCosUnbalancedDisc(UnbalancedDisc):
     def __init__(self, dt=0.025, sigma_n=[0]):
