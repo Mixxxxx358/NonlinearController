@@ -5,6 +5,7 @@ from NonlinearController.model_utils import *
 from matplotlib import pyplot as plt
 from functorch import jacrev, jacfwd, vmap
 import torch
+import time
 
 def velocity_lambda_trap(x0,dx,u0,du,nx,nu,ny,Jfx,Jfu,Jhx,stages):
     # FUNCTION LAMBDA_SIMPSON
@@ -161,6 +162,13 @@ class velocity_lpv_embedder():
     
 class velocity_lpv_embedder_autograd():
     def __init__(self, ss_enc, Nc, n_stages=20):
+        if torch.cuda.is_available(): 
+            dev = "cpu" 
+        else: 
+            dev = "cpu" 
+        self.device = torch.device(dev) 
+        print("Using " + str(dev))
+
         self.nx = ss_enc.nx
         self.nu = ss_enc.nu if ss_enc.nu is not None else 1
         self.ny = ss_enc.ny if ss_enc.ny is not None else 1
@@ -168,12 +176,12 @@ class velocity_lpv_embedder_autograd():
         self.Nc = Nc
         self.dlam = 1/n_stages
 
-        self.JacF = vmap(jacrev(ss_enc.fn, argnums=(0,1)))
-        self.JacH = vmap(jacrev(ss_enc.hn))
+        self.JacF = torch.vmap(torch.func.jacrev(ss_enc.fn.to(self.device).float(), argnums=(0,1)))
+        self.JacH = torch.vmap(torch.func.jacrev(ss_enc.hn.to(self.device).float()))
 
-        self.mult_fA = torch.from_numpy(np.tile(np.vstack((np.ones((1,self.nx,self.nx)), 4*np.ones((1,self.nx,self.nx)), np.ones((1,self.nx,self.nx)))),(n_stages*Nc,1,1)))*self.dlam/6
-        self.mult_fB = torch.from_numpy(np.tile(np.vstack((np.ones((1,self.nx,self.nu)), 4*np.ones((1,self.nx,self.nu)), np.ones((1,self.nx,self.nu)))),(n_stages*Nc,1,1)))*self.dlam/6
-        self.mult_fC = torch.from_numpy(np.tile(np.vstack((np.ones((1,self.ny,self.nx)), 4*np.ones((1,self.ny,self.nx)), np.ones((1,self.ny,self.nx)))),(n_stages*Nc,1,1)))*self.dlam/6
+        self.mult_fA = (torch.from_numpy(np.tile(np.vstack((np.ones((1,self.nx,self.nx)), 4*np.ones((1,self.nx,self.nx)), np.ones((1,self.nx,self.nx)))),(n_stages*Nc,1,1)))*self.dlam/6).to(self.device)
+        self.mult_fB = (torch.from_numpy(np.tile(np.vstack((np.ones((1,self.nx,self.nu)), 4*np.ones((1,self.nx,self.nu)), np.ones((1,self.nx,self.nu)))),(n_stages*Nc,1,1)))*self.dlam/6).to(self.device)
+        self.mult_fC = (torch.from_numpy(np.tile(np.vstack((np.ones((1,self.ny,self.nx)), 4*np.ones((1,self.ny,self.nx)), np.ones((1,self.ny,self.nx)))),(n_stages*Nc,1,1)))*self.dlam/6).to(self.device)
 
         self.Lambda = np.array([])
         lambda0 = 0
@@ -192,9 +200,8 @@ class velocity_lpv_embedder_autograd():
         Xlam = np.kron(dX0, self.Lambda) + np.kron(X_1, np.ones(self.Lambda.shape))
         Ulam = np.kron(dU0, self.Lambda) + np.kron(U_1, np.ones(self.Lambda.shape))
 
-        x_tens = torch.reshape(torch.Tensor(Xlam[np.newaxis].T),(self.batch_size,1,self.nx))
-        u_tens = torch.reshape(torch.Tensor(Ulam[np.newaxis].T),(self.batch_size,1,self.nu))
-
+        x_tens = torch.reshape(torch.tensor(Xlam[np.newaxis].T, device=self.device),(self.batch_size,1,self.nx)).float()
+        u_tens = torch.reshape(torch.tensor(Ulam[np.newaxis].T, device=self.device),(self.batch_size,1,self.nu)).float()
         fA, fB = self.JacF(x_tens,u_tens)
         fC = self.JacH(x_tens)
 
@@ -209,8 +216,8 @@ class velocity_lpv_embedder_autograd():
         tempB = torch.tensor_split(torch.mul(fB.view((self.batch_size,self.nx,self.nu)), self.mult_fB).detach(), self.Nc)
         tempC = torch.tensor_split(torch.mul(fC.view((self.batch_size,self.ny,self.nx)), self.mult_fC).detach(), self.Nc)
         for i in range(self.Nc):
-            list_A[self.nx*(i):self.nx*(i+1),:] = torch.sum(tempA[i], axis=0).numpy()
-            list_B[self.nx*(i):self.nx*(i+1),:] = torch.sum(tempB[i], axis=0).numpy()
-            list_C[self.ny*(i):self.ny*(i+1),:] = torch.sum(tempC[i], axis=0).numpy()
+            list_A[self.nx*(i):self.nx*(i+1),:] = torch.sum(tempA[i], axis=0).cpu().numpy()
+            list_B[self.nx*(i):self.nx*(i+1),:] = torch.sum(tempB[i], axis=0).cpu().numpy()
+            list_C[self.ny*(i):self.ny*(i+1),:] = torch.sum(tempC[i], axis=0).cpu().numpy()
 
         return list_A, list_B, list_C
