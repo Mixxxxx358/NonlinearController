@@ -192,8 +192,8 @@ class velocity_lpv_embedder_autograd():
         Xlam = np.kron(dX0, self.Lambda) + np.kron(X_1, np.ones(self.Lambda.shape))
         Ulam = np.kron(dU0, self.Lambda) + np.kron(U_1, np.ones(self.Lambda.shape))
 
-        x_tens = torch.reshape(torch.Tensor(Xlam[np.newaxis].T),(self.batch_size,1,2))
-        u_tens = torch.reshape(torch.Tensor(Ulam[np.newaxis].T),(self.batch_size,1,1))
+        x_tens = torch.reshape(torch.Tensor(Xlam[np.newaxis].T),(self.batch_size,1,self.nx))
+        u_tens = torch.reshape(torch.Tensor(Ulam[np.newaxis].T),(self.batch_size,1,self.nu))
 
         fA, fB = self.JacF(x_tens,u_tens)
         fC = self.JacH(x_tens)
