@@ -2,8 +2,10 @@ import deepSI
 import numpy as np
 from casadi import *
 from NonlinearController.model_utils import *
+from NonlinearController.models import *
 from matplotlib import pyplot as plt
 from functorch import jacrev, jacfwd, vmap
+from NonlinearController.models import *
 import torch
 import time
 
@@ -87,6 +89,82 @@ def lpv_embedding(model, n_stages=20):
     lpv_C = Function("get_C",[x0,u0],[C_sym])
 
     return lpv_A, lpv_B, lpv_C, correction_f, correction_h
+
+def CasADi_velocity_lpv_embedding(expr_f, expr_h, x, u, n_stages=20):
+    '''Takes veocity ss encoder model and outputs velocity lpv embedded CasADi functions for A,B,C'''
+    # declared sym variables
+    nx = 2
+    nu = 1
+    ny = 2
+
+    # convert torch nn to casadi function
+    f = Function('f', [x, u], [expr_f])
+    h = Function('h', [x], [expr_h])
+
+    Jfx = Function("Jfx", [x, u], [jacobian(expr_f,x)])
+    Jfu = Function("Jfu", [x, u], [jacobian(expr_f,u)])
+    Jhx = Function("Jhx", [x, u], [jacobian(expr_h,x)])
+
+    dx = MX.sym("dx",nx,1)
+    x0 = MX.sym("x0",nx,1)
+    du = MX.sym("du",nu,1)
+    u0 = MX.sym("u0",nu,1)
+
+    [A_sym, B_sym, C_sym] = velocity_lambda_trap(x0,dx,u0,du,nx,nu,ny,Jfx,Jfu,Jhx,n_stages)
+    lpv_A = Function("get_A",[x0,dx,u0,du],[A_sym])
+    lpv_B = Function("get_B",[x0,dx,u0,du],[B_sym])
+    lpv_C = Function("get_C",[x0,dx,u0,du],[C_sym])
+
+    return lpv_A, lpv_B, lpv_C
+
+class CasADi_velocity_lpv_embedder():
+    def __init__(self, Nc, n_stages=20):
+        self.nx = 2
+        self.nu = 1
+        self.ny = 2
+
+        self.Nc = Nc
+
+        f_ode = odeCasADiUnbalancedDisc()
+        expr_rk4, x0_cas, u0_cas = RK4(f_ode, dt=0.1)
+        # f_rk4 = Function('f_rk4', [x0_cas, u0_cas], [expr_rk4])
+        expr_sincos = vertcat(sin(x0_cas[1]), cos(x0_cas[1]))
+        # expr_sincos = x0_cas
+        # h_sincos = Function('h_sincos', [x0_cas], [expr_sincos])
+        
+
+        self.lpv_A, self.lpv_B, self.lpv_C = CasADi_velocity_lpv_embedding(expr_rk4, expr_sincos, x0_cas, u0_cas, n_stages=n_stages)
+        self.lpv_A_Nc = self.lpv_A.map(self.Nc, "thread", 32)
+        self.lpv_B_Nc = self.lpv_B.map(self.Nc, "thread", 32)
+        self.lpv_C_Nc = self.lpv_C.map(self.Nc, "thread", 32)
+
+    def __call__(self, X, U):
+        X_1 = np.hstack(np.split(X[:-self.nx],self.Nc))
+        dX0 = np.hstack(np.split(X[self.nx:] - X[:-self.nx],self.Nc))
+        U_1 = np.hstack(np.split(U[:-self.nu],self.Nc))
+        dU0 = np.hstack(np.split(U[self.nu:] - U[:-self.nu],self.Nc))
+        
+        pA = self.lpv_A_Nc(X_1, dX0, U_1, dU0)
+        pB = self.lpv_B_Nc(X_1, dX0, U_1, dU0)
+        pC = self.lpv_C_Nc(X_1, dX0, U_1, dU0)
+
+        return self.reshapeEmbedding(pA, pB, pC)
+
+    def reshapeEmbedding(self, pA,pB,pC):
+        list_A = np.zeros([self.Nc*self.nx, self.nx])
+        list_B = np.zeros([self.Nc*self.nx, self.nu])
+        list_C = np.zeros([self.Nc*self.ny, self.nx])
+
+        for i in range(self.Nc):
+            list_A[(self.nx*i):(self.nx*i+self.nx),:] = pA[:,i*self.nx:(i+1)*self.nx]
+
+        for i in range(self.Nc):
+            list_B[(self.nx*i):(self.nx*i+self.nx),:] = pB[:,i*self.nu:(i+1)*self.nu]
+
+        for i in range(self.Nc):
+            list_C[(self.ny*i):(self.ny*i+self.ny),:] = pC[:,i*self.nx:(i+1)*self.nx]
+
+        return list_A, list_B, list_C
 
 def velocity_lpv_embedding(model, n_stages=20):
     '''Takes veocity ss encoder model and outputs velocity lpv embedded CasADi functions for A,B,C'''
@@ -176,8 +254,8 @@ class velocity_lpv_embedder_autograd():
         self.Nc = Nc
         self.dlam = 1/n_stages
 
-        self.JacF = torch.vmap(torch.func.jacrev(ss_enc.fn.to(self.device).float(), argnums=(0,1)))
-        self.JacH = torch.vmap(torch.func.jacrev(ss_enc.hn.to(self.device).float()))
+        self.JacF = vmap(jacrev(ss_enc.fn.to(self.device).float(), argnums=(0,1)))
+        self.JacH = vmap(jacrev(ss_enc.hn.to(self.device).float()))
 
         self.mult_fA = (torch.from_numpy(np.tile(np.vstack((np.ones((1,self.nx,self.nx)), 4*np.ones((1,self.nx,self.nx)), np.ones((1,self.nx,self.nx)))),(n_stages*Nc,1,1)))*self.dlam/6).to(self.device)
         self.mult_fB = (torch.from_numpy(np.tile(np.vstack((np.ones((1,self.nx,self.nu)), 4*np.ones((1,self.nx,self.nu)), np.ones((1,self.nx,self.nu)))),(n_stages*Nc,1,1)))*self.dlam/6).to(self.device)
