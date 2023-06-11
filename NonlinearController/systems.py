@@ -1,15 +1,6 @@
 import deepSI
 import numpy as np
 
-class LTI(deepSI.System_ss):
-    def __init__(self):
-        super(LTI, self).__init__(nx=2, nu=None, ny=None)
-    def f(self,x,u): #state function
-        x = -0.5*x[0] + 0.5*x[1] + u, 0.5*x[0]
-        return x
-    def h(self,x,u): #output functions
-        return x[0]
-
 class UnbalancedDisc(deepSI.System_deriv):
     def __init__(self, dt=0.025, sigma_n=[0]):
         super(UnbalancedDisc, self).__init__(nx=2, dt=dt)
@@ -28,19 +19,20 @@ class UnbalancedDisc(deepSI.System_deriv):
         return [dz1,dz2]
 
     def h(self,x,u):
-        p = x[1]
+        p = x[1] + np.random.normal(0, self.sigma_n[0])
         p = (p+np.pi)%(2*np.pi) - np.pi
-        # return x[0], p + np.random.normal(0, self.sigma_n[0])
-        return p + np.random.normal(0, self.sigma_n[0])
+        # return x[0], p
+        return p
     
-class VelocityUnbalancedDisc(UnbalancedDisc):
+class FullUnbalancedDisc(UnbalancedDisc):
     def __init__(self, dt=0.025, sigma_n=[0]):
-        super(VelocityUnbalancedDisc, self).__init__(dt=dt, sigma_n=sigma_n)
+        super(FullUnbalancedDisc, self).__init__(dt=dt, sigma_n=sigma_n)
 
     def h(self,x,u):
         theta = x[1] + np.random.normal(0, self.sigma_n[0])
+        # theta = (theta+np.pi)%(2*np.pi) - np.pi
         omega = x[0] + np.random.normal(0, self.sigma_n[0])
-        return omega, np.sin(theta), np.cos(theta)
+        return omega, theta
     
 class SinCosUnbalancedDisc(UnbalancedDisc):
     def __init__(self, dt=0.025, sigma_n=[0]):
@@ -68,20 +60,20 @@ class ReversedUnbalancedDisc(deepSI.System_deriv):
         return [dz1,dz2]
 
     def h(self,x,u):
-        p = x[1]
-        p = (p+np.pi)%(2*np.pi) - np.pi
-        return x[0], p + np.random.normal(0, self.sigma_n[0])
-        # return x[1] + np.random.normal(0, self.sigma_n[0])
+        p = x[1] + np.random.normal(0, self.sigma_n[0])
+        p = (p+np.pi)%(2*np.pi) - np.pi + np.random.normal(0, self.sigma_n[0])
+        return p
 
-class ReversedVelocityUnbalancedDisc(ReversedUnbalancedDisc):
+class ReversedFullUnbalancedDisc(ReversedUnbalancedDisc):
     def __init__(self, dt=0.025, sigma_n=[0]):
-        super(ReversedVelocityUnbalancedDisc, self).__init__(dt=dt, sigma_n=sigma_n)
+        super(ReversedFullUnbalancedDisc, self).__init__(dt=dt, sigma_n=sigma_n)
 
     def h(self,x,u):
-        theta = (x[1]+np.pi)%(2*np.pi) + np.random.normal(0, self.sigma_n[0])
+        theta = x[1] + np.random.normal(0, self.sigma_n[0])
+        # theta = (theta+np.pi)%(2*np.pi) - np.pi
         omega = x[0] + np.random.normal(0, self.sigma_n[0])
-        return omega, np.sin(theta), np.cos(theta)
-    
+        return omega, theta
+   
 class ReversedSinCosUnbalancedDisc(ReversedUnbalancedDisc):
     def __init__(self, dt=0.025, sigma_n=[0]):
         super(ReversedSinCosUnbalancedDisc, self).__init__(dt=dt, sigma_n=sigma_n)
