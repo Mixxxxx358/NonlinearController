@@ -81,3 +81,19 @@ class ReversedSinCosUnbalancedDisc(ReversedUnbalancedDisc):
     def h(self,x,u):
         measurement = x[1] + np.random.normal(0, self.sigma_n[0])
         return np.sin(measurement), np.cos(measurement)
+
+class MassSpringDamper(deepSI.System_deriv):
+    def __init__(self, k, c, m, dt=0.025, sigma_n=[0]):
+        super(MassSpringDamper, self).__init__(nx=2, dt=dt)
+        self.k = k
+        self.c = c
+        self.m = m
+
+    def deriv(self,x,u):
+        z1,z2 = x
+        dz1 = -self.k/self.m*z2 - self.c/self.m*z1 + 1/self.m*u
+        dz2 = z1
+        return [dz1,dz2]
+
+    def h(self,x,u):
+        return x
