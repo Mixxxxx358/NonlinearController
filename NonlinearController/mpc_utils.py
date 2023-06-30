@@ -33,6 +33,13 @@ def get_Omega(Nc, Q):
     '''Return kronecker product of Q and Identity of size Nc'''
     return np.kron(np.eye(Nc), Q)
 
+def getZ(list_C, Nc, ny, nx): # Z is Lambda in the report
+    Z = np.zeros((Nc*ny, Nc*nx))
+    for i in range(Nc):
+        Z[i*ny:(i+1)*ny,i*nx:(i+1)*nx] = list_C[i*ny:(i+1)*ny,:nx]
+
+    return Z
+
 def getDEMc(y_min, y_max, u_min, u_max, Nc, ny, nu):
     bi = np.array([list(itertools.chain([-u_min, u_max], [y*-1 for y in y_min],  y_max))])
     bN = np.array([list(itertools.chain([y*-1 for y in y_min],  y_max))])
