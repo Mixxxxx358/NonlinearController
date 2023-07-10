@@ -14,6 +14,22 @@ def randomLevelReference(Nsim, nt_range, level_range):
             break
     return x_reference_list
 
+def randomLevelReferenceSteps(Nsim, nt_range, level_range):
+    x_reference_list = np.array([])
+    Nsim_remaining = Nsim
+    current_amp = 0
+    while True:
+        Nsim_steps = random.randint(nt_range[0],nt_range[1])
+        Nsim_remaining = Nsim_remaining - Nsim_steps
+        current_amp += random.uniform(level_range[0],level_range[1])
+
+        x_reference_list = np.hstack((x_reference_list, np.ones(Nsim_steps)*current_amp))
+
+        if Nsim_remaining <= 0:
+            x_reference_list = x_reference_list[:Nsim]
+            break
+    return x_reference_list
+
 def setPointInput(y_ref):
     g = 9.80155078791343
     J = 0.000244210523960356
@@ -91,3 +107,11 @@ def extendReference(reference, nx, ny, Nc):
         r[nz*i:nz*i+ny,0] = reference[:,i]
 
     return r
+
+class normalizer():
+    def __init__(self, y0, ystd, u0, ustd):
+        self.y0 = y0
+        self.ystd = ystd
+
+        self.u0 = u0
+        self.ustd = ustd
