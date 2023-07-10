@@ -84,6 +84,31 @@ def velocity_lambda_trap(x0,dx,u0,du,nx,nu,ny,Jfx,Jfu,Jhx,stages):
             
     return A,B,C
 
+def velocity_lambda_simpsons(x0,dx,u0,du,nx,nu,ny,Jfx,Jfu,Jhx,stages):
+    # FUNCTION LAMBDA_SIMPSON
+    # Simpson rule integrator between 0 and 1 with chosen resolution (stages)
+    # used to get A,B matrices symbolically to be used at gridpoints
+    
+    A = np.zeros([nx,nx])
+    B = np.zeros([nx,nu])
+    C = np.zeros([ny,nx])
+    lambda0 = 0
+    dlam = 1/stages
+
+    x = lambda lam: x0 + lam*dx
+    u = lambda lam: u0 + lam*du
+
+    # x = lambda lam: -(dx - x0) + lam*dx
+    # u = lambda lam: -(du - u0) + lam*du
+
+    for i in np.arange(stages):
+        A = A + dlam*1/6*(Jfx(x(lambda0), u(lambda0)) + 4*Jfx(x(lambda0+dlam/2), u(lambda0+dlam/2)) + Jfx(x(lambda0+dlam), u(lambda0+dlam)))
+        B = B + dlam*1/6*(Jfu(x(lambda0), u(lambda0)) + 4*Jfu(x(lambda0+dlam/2), u(lambda0+dlam/2)) + Jfu(x(lambda0+dlam), u(lambda0+dlam)))
+        C = C + dlam*1/6*(Jhx(x(lambda0), u(lambda0)) + 4*Jhx(x(lambda0+dlam/2), u(lambda0+dlam/2)) + Jhx(x(lambda0+dlam), u(lambda0+dlam)))
+        lambda0 = lambda0 + dlam
+            
+    return A,B,C
+
 def lambda_trap(x0,u0,nx,nu,ny,Jfx,Jfu,Jhx,stages):
     # FUNCTION LAMBDA_SIMPSON
     # Simpson rule integrator between 0 and 1 with chosen resolution (stages)
@@ -140,12 +165,12 @@ def lpv_embedding(model, n_stages=20):
 
     return lpv_A, lpv_B, lpv_C, correction_f, correction_h
 
-def CasADi_velocity_lpv_embedding(expr_f, expr_h, x, u, n_stages=20, numerical_method=1):
+def CasADi_velocity_lpv_embedding(expr_f, expr_h, x, u, ny, n_stages=20, numerical_method=1):
     '''Takes veocity ss encoder model and outputs velocity lpv embedded CasADi functions for A,B,C'''
     # declared sym variables
-    nx = 2
-    nu = 1
-    ny = 1 # change this for sincos
+    nx = x.size()[0]
+    nu = u.size()[0]
+    # ny = 1 # change this for sincos
 
     # convert torch nn to casadi function
     f = Function('f', [x, u], [expr_f])
@@ -165,6 +190,8 @@ def CasADi_velocity_lpv_embedding(expr_f, expr_h, x, u, n_stages=20, numerical_m
     elif numerical_method == 2:
         [A_sym, B_sym, C_sym] = velocity_lambda_trap(x0,dx,u0,du,nx,nu,ny,Jfx,Jfu,Jhx,n_stages)
     elif numerical_method == 3:
+        [A_sym, B_sym, C_sym] = velocity_lambda_simpsons(x0,dx,u0,du,nx,nu,ny,Jfx,Jfu,Jhx,n_stages)
+    elif numerical_method == 4:
         [A_sym, B_sym, C_sym] = velocity_lambda_MMVT(x0,dx,u0,du,nx,nu,ny,Jfx,Jfu,Jhx,n_stages)
     else:
         print("Numerical method not recognised.")
@@ -176,23 +203,27 @@ def CasADi_velocity_lpv_embedding(expr_f, expr_h, x, u, n_stages=20, numerical_m
     return lpv_A, lpv_B, lpv_C
 
 class CasADi_velocity_lpv_embedder():
-    def __init__(self, Nc, n_stages=20, numerical_method=1):
-        self.nx = 2
-        self.nu = 1
-        self.ny = 1 # change this for sincos
+    def __init__(self, model, Nc, n_stages=20, numerical_method=1):
+        self.nx = model.nx
+        self.nu = model.nu
+        self.ny = model.ny
 
         self.Nc = Nc
 
-        f_ode = odeCasADiUnbalancedDisc()
-        expr_rk4, x0_cas, u0_cas = RK4(f_ode, dt=0.1)
+        # f_ode = odeCasADiUnbalancedDisc()
+        # f_ode = odeCasADiMassSpringDamper()
+
+        # expr_rk4, x0_cas, u0_cas = RK4(f_ode, dt=0.1)
+
         # change these expressions for sincos
         # f_rk4 = Function('f_rk4', [x0_cas, u0_cas], [expr_rk4])
+
         # expr_output = vertcat(sin(x0_cas[1]), cos(x0_cas[1]))
-        expr_output = vertcat(x0_cas[1])
+        # expr_output = vertcat(x0_cas[1])
         # h_sincos = Function('h_sincos', [x0_cas], [expr_sincos])
         
 
-        self.lpv_A, self.lpv_B, self.lpv_C = CasADi_velocity_lpv_embedding(expr_rk4, expr_output, x0_cas, u0_cas, n_stages=n_stages, numerical_method=numerical_method)
+        self.lpv_A, self.lpv_B, self.lpv_C = CasADi_velocity_lpv_embedding(model.expr_rk4, model.expr_output, model.x_cas, model.u_cas, self.ny, n_stages=n_stages, numerical_method=numerical_method)
         self.lpv_A_Nc = self.lpv_A.map(self.Nc, "thread", 32)
         self.lpv_B_Nc = self.lpv_B.map(self.Nc, "thread", 32)
         self.lpv_C_Nc = self.lpv_C.map(self.Nc, "thread", 32)
@@ -332,8 +363,8 @@ class velocity_lpv_embedder_autograd():
         self.batch_size = Nc*n_stages*n_int_comp
 
     def __call__(self, X, U):
-        X_1 = np.hstack(np.split(X[:-self.nx],self.Nc))
-        dX0 = np.hstack(np.split(X[self.nx:] - X[:-self.nx],self.Nc))
+        X_1 = np.hstack(np.split(X[:-2*self.nx],self.Nc))
+        dX0 = np.hstack(np.split(X[self.nx:-self.nx] - X[:-2*self.nx],self.Nc))
         U_1 = np.hstack(np.split(U[:-self.nu],self.Nc))
         dU0 = np.hstack(np.split(U[self.nu:] - U[:-self.nu],self.Nc))
 
@@ -343,6 +374,11 @@ class velocity_lpv_embedder_autograd():
         x_tens = torch.reshape(torch.tensor(Xlam[np.newaxis].T, device=self.device),(self.batch_size,1,self.nx)).float()
         u_tens = torch.reshape(torch.tensor(Ulam[np.newaxis].T, device=self.device),(self.batch_size,1,self.nu)).float()
         fA, fB = self.JacF(x_tens,u_tens)
+
+        X0 = np.hstack(np.split(X[self.nx:-self.nx],self.Nc))
+        dX1 = np.hstack(np.split(X[2*self.nx:] - X[self.nx:-self.nx],self.Nc))
+        Xlam = np.kron(dX1, self.Lambda) + np.kron(X0, np.ones(self.Lambda.shape))
+        x_tens = torch.reshape(torch.tensor(Xlam[np.newaxis].T, device=self.device),(self.batch_size,1,self.nx)).float()
         fC = self.JacH(x_tens)
 
         return self.reshapeEmbedding(fA, fB, fC)

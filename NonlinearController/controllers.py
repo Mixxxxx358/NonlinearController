@@ -1,193 +1,273 @@
 import numpy as np
-from NonlinearController.mpc_utils import *
-from NonlinearController.systems import LTI
-from matplotlib import pyplot as plt
-from casadi import *
 from NonlinearController.model_utils import *
+from NonlinearController.mpc_utils import *
+from NonlinearController.utils import *
+from NonlinearController.lpv_embedding import *
+from NonlinearController.models import *
+import qpsolvers as qp
 
-class Controller:
-    def __init__(self):
-        pass
+class VelocityMpcController():
+    """
+    A class for velocity MPC controller.
 
-    def __call__(self):
-        raise NotImplementedError
+    ...
 
-class Controller_mpc(Controller):
-    def __init__(self, Nc, nx, nu, ny, Q=None, R=None):
-        super(Controller_mpc,self).__init__()
+    Attributes
+    ----------
+    ph : str
+        placeholder
+
+    Methods
+    -------
+    __call__(reference):
+        Returns optimal input for given reference and progresses controller by one step.
+    """
+
+    def __init__(self, system, model, Nc, Q1, Q2, R, P, qlim, wlim, max_iter=1, n_stages=1, numerical_method=1):
+        """
+        Constructs all the necessary attributes for the person object.
+
+        Parameters
+        ----------
+            system : deepSI.System_deriv
+                continuous system with rk4 discretization for timesteps
+            model : CasADi_model (or) deepSI.fit_systems.SS_encoder_general
+                discrete model approximating dynamics of system
+            Nc : int
+                control horizon of mpc controller
+            Q1 : np.ndarray
+                weighting matrix for output
+            Q2 : np.ndarray
+                weighting matrix for incremental states
+            R : np.ndarray
+                weighting matrix for incremental inputs
+            P : np.ndarray
+                weighting matrix for difference real setpoint and artificial setpoint
+            ylim : np.ndarray
+
+        """
+
+        self.system = system
+        self.dt = system.dt
+
+        self.nu = system.nu if system.nu is not None else 1
+        self.ny = system.ny if system.ny is not None else 1
+        self.ne = 1
+
+        self.model = model
+        if model.expr_rk4 is not None:
+            self.model_type = "CasADi"
+        else:
+            self.model_type = "encoder"
+        self.nx = model.nx
+        self.nz = self.nx+self.ny
+
         self.Nc = Nc
-        self.nx = nx
-        self.nu = nu
-        self.ny = ny
 
-        self.Q = Q if Q is not None else np.eye(self.nx)
-        self.R = R if R is not None else np.eye(self.nu)
+        self.Q1 = Q1
+        self.Q2 = Q2
+        self.R = R
+        self.P = P
 
-    def reset(self):
-        raise NotImplementedError
+        self.max_iter = max_iter
+        self.numerical_method = numerical_method
+        self.n_stages = n_stages
 
-class Controller_lin_mpc(Controller_mpc):
-    def __init__(self, Nc, nx, nu, ny, A, B, C=None, D=None, f=None, h=None, Q=None, R=None): # we assume here that we always have A and B
-        super(Controller_lin_mpc,self).__init__(Nc, nx, nu, ny, Q, R)
+        self.w_max = wlim; self.w_min = -wlim
+        self.q_max = [qlim]; self.q_min = [-qlim]
+        self.w0 = 0; self.q0 = [0.0]
 
-        self.A = A
-        self.B = B
-        self.C = C if C is not None else np.zeros((ny,nx))
-        self.D = D if D is not None else np.zeros((ny,nu))
+        self.Offline_QP()
 
-        self.list_A = np.tile(self.A, (self.Nc, 1))
-        self.list_B = np.tile(self.B, (self.Nc, 1))
+    def Offline_QP(self):
+        """
+        Returns optimal input for given reference and progresses controller by one step.
+        """
 
-    def reset(self):
-        raise NotImplementedError
-
-    def __call__(self, reference, current_state): # currently converges to zero
-        if len(reference) != self.Nc:
-            pass
-
-        self.Phi = get_Phi(self.list_A, self.Nc, self.nx)
-        self.Gamma = get_Gamma(self.list_A, self.list_B, self.Nc, self.nx, self.nu)
-        self.Omega = get_Omega(self.Nc, self.Q)
+        self.Omega1 = get_Omega(self.Nc, self.Q1)
+        self.Omega2 = get_Omega(self.Nc, self.Q2)
         self.Psi = get_Psi(self.Nc, self.R)
 
-        self.G = 2*(self.Psi + self.Gamma.T @ self.Omega @ self.Gamma)
-        self.F = 2*(self.Gamma.T @ self.Omega @ self.Phi)
+        # extended objective matrices for soft constraints
+        e_lambda = 1e8 # weighting of minimizing e in objective function
+        self.Ge = np.zeros((self.Nc*self.nu+self.ne,self.Nc*self.nu+self.ne)) 
+        self.Ge[-self.ne:,-self.ne:] = e_lambda
 
-        Uk = -np.linalg.inv(self.G) @ self.F @ current_state
+        self.embedder = CasADi_velocity_lpv_embedder(model=self.model, Nc=self.Nc, n_stages=self.n_stages, numerical_method=self.numerical_method)
 
-        return Uk[:self.nu]
+        # normalize initial input and output
+        self.norm = normalizer(np.array([0.0]), np.array([1.0]), 0, 1)#model.norm
+        self.u0 = norm_input(self.w0, self.norm)
+        self.y0 = norm_output(self.q0, self.norm)
 
-class Controller_lpv_mpc(Controller_mpc):
-    def __init__(self, Nc, nx, nu, ny, Q=None, R=None):
-        super(Controller_lpv_mpc,self).__init__(Nc, nx, nu, ny, Q, R)
+        # determine constraint matrices
+        self.u_min = norm_input(self.w_min, self.norm)
+        self.u_max = norm_input(self.w_max, self.norm)
+        self.y_min = np.hstack((norm_output(self.q_min, self.norm), np.ones(self.nx)*-1000))
+        self.y_max = np.hstack((norm_output(self.q_max, self.norm), np.ones(self.nx)*1000)) # augmented with the velocity states
+        self.D, self.E, self.M, self.c = getDEMc(self.y_min, self.y_max, self.u_min, self.u_max, self.Nc, self.nz, self.nu)
+        self.Lambda = np.tril(np.ones((self.Nc,self.Nc)),0)
 
-        self.init_QP()
+        # determine terminal constraint matrices
+        self.M_terminal = np.zeros((self.nx+self.ny,self.ny)); self.M_terminal[:self.ny,:] = np.eye(self.ny)
+        self.E_terminal = np.zeros((self.nx+self.ny,self.nx)); self.E_terminal[self.ny:,:] = np.eye(self.nx)
+        self.Sy = np.hstack((np.zeros((self.ny,(self.Nc-1)*self.ny)),np.eye(self.ny)))
+        self.Sx = np.hstack((np.zeros((self.nx,(self.Nc-1)*self.nz+self.ny)),np.eye(self.nx)))
 
-    def init_QP(self):
-        self.list_A = np.zeros([Nc*nx, nx])
-        self.list_B = np.zeros([Nc*nx, nu])
-        self.list_C = np.zeros([Nc*ny, nx])
+        # initial predicted states, input, and output
+        self.X_1 = np.tile(np.zeros((1,2)),self.Nc+2).T # This cannot be assumed always. Depends on initial conditions of system
+        self.U_1 = np.ones((self.Nc+1)*self.nu)[np.newaxis].T*self.u0
+        self.Y_1 = np.tile(self.y0[np.newaxis],self.Nc).T
 
-        self.Psi = get_Psi(Nc, self.R)
-        self.Omega = get_Omega(Nc, self.Q)
+    def __call__(self, reference):
+        """
+        Placeholder
 
-        return
+        Parameters
+        ----------
+            system : deepSI.System_deriv
+                continuous system with rk4 discretization for timesteps
 
-    def reset(self):
-        raise NotImplementedError
+        """
 
-    def __call__(self, reference, current_state):
-        A = np.ones((self.nx, self.nx))
-        B = np.ones((self.nx, self.nu))
-        u = np.zeros((self.nu, 1))
-        return A@current_state + B@u
-
-    def iterative_QP_solve(self):
-        # take lpv, solve qp for u, use model for new states. Repeat until convergence
-        raise NotImplementedError
-
-    def lpv(self):
-        # take state and input predictions and return lpv representation of A,B,C,D matrices
-        # pA = self.Get_A(np.vstack(np.split(x,Nc)).T,u)
-        # for i in range(Nc):
-        #     self.list_A[(nx*i):(nx*i+nx),:] = pA[:,i*nx:(i+1)*nx]
-
-        # pB = self.Get_B(np.vstack(np.split(x,Nc)).T,u)
-        # for i in range(Nc):
-        #     self.list_B[(nx*i):(nx*i+nx),:] = pB[:,i*nu:(i+1)*nu]
-
-        # pC = self.Get_C(np.vstack(np.split(x,Nc)).T,u)
-        # for i in range(Nc):
-        #     self.list_C[(ny*i):(ny*i+ny),:] = pC[:,i*nx:(i+1)*nx]
-        raise NotImplementedError
-
-class Controller_automatic_lpv_mpc(Controller_lpv_mpc):
-    def __init__(self, Nc, nx, nu, ny, ss_enc, stages=5):
-        super(Controller_automatic_lpv_mpc).__init__(Nc, nx, nu, ny)
-
-        self.ss_enc
-        self.stages = stages
-        
+        return reference
     
-    def init_automatic_lpv(self):
-        x = MX.sym("x", self.nx, 1)
-        u = MX.sym("u", self.nu, 1)
+    def QP_solve(self, reference):
+        """
+        Returns optimal input for given reference and progresses controller by one step.
 
-        rhs_f = CasADi_Fn(self.ss_enc, x, u)
-        f = Function('f', [x, u], [rhs_f])
-        rhs_y = CasADi_Hn(self.ss_enc, x)
-        h = Function('h', [x], [rhs_y])
+        Parameters
+        ----------
+            reference : np.ndarray
+                reference to be tracked by QP of MPC
 
-        self.correction_f = f(np.zeros((nx,1)), 0)
-        rhs_fc = rhs_f - self.correction_f
-        self.correction_h = h(np.zeros((nx,1)))
-        rhs_yc = rhs_y - self.correction_h
+        """
 
-        Jfx = Function("Jfx", [x, u], [jacobian(rhs_fc,x)])
-        Jfu = Function("Jfu", [x, u], [jacobian(rhs_fc,u)])
-        Jhx = Function("Jhx", [x, u], [jacobian(rhs_yc,x)])
+        reference = self.convertReference(reference)
+        r = extendReference(reference, 0, self.ny, self.Nc)
+    
+        #++++++++++++++++++ start iteration +++++++++++++++++++++++
+        for iteration in range(self.max_iter):
+            # determine predicted velocity states and output
+            dX0 = differenceVector(self.X_1[:-self.nx], self.nx)
+            dU0 = differenceVector(self.U_1, self.nu)
+            # determine extended state from predicted output and velocity states
+            Z0 = extendState(self.Y_1, dX0, self.nx, self.ny, self.Nc)
 
-        [A_sym, B_sym, C_sym] = self.lambda_simpson(x,u,nx,nu,ny,Jfx,Jfu,Jhx,self.stages)
-        get_A = Function("get_A",[x,u],[A_sym])
-        get_B = Function("get_B",[x,u],[B_sym])
-        get_C = Function("get_C",[x,u],[C_sym])
-        self.Get_A = get_A.map(self.Nc, "thread", 32)
-        self.Get_B = get_B.map(self.Nc, "thread", 32)
-        self.Get_C = get_C.map(self.Nc, "thread", 32)
+            # determine lpv state space dependencies
+            list_A, list_B, list_C = self.embedder(self.X_1, self.U_1)
+            list_ext_A, list_ext_B, list_ext_C = extendABC(list_A, list_B, list_C, self.nx, self.ny, self.nu, self.Nc)
+            
+            Phi = get_Phi(list_ext_A, self.Nc, self.nz)
+            Gamma = get_Gamma(list_ext_A, list_ext_B, self.Nc, self.nz, self.nu)
+            Z = getZ(list_ext_C,self.Nc,self.ny,self.nz)
 
-        return
+            # describe optimization problem
+            G = 2*(Gamma.T @ (Z.T @ (self.Omega1 + self.Sy.T @ self.P @ self.Sy) @ Z + self.Omega2) @ Gamma + self.Psi)
+            F = 2*(Gamma.T @ (Z.T @ (self.Omega1 @ (Z @ Phi @ Z0[:self.nz] - r) + \
+                                     self.Sy.T @ self.P @ (self.Sy @ Z @ Phi @ Z0[:self.nz] - r[-self.ny:])) + self.Omega2 @ Phi @ Z0[:self.nz]))
+            
+            # describe inequality constraints
+            L = (self.M @ Gamma + self.E @ self.Lambda)
+            alpha = np.ones((self.Nc,1))*self.U_1[0,0]
+            W = -(self.E @ alpha + (self.D + self.M @ Phi) @ Z0[:self.nz])
+            # add soft constraints
+            self.Ge[:self.Nc*self.nu, :self.Nc*self.nu] = G
+            Fe = np.vstack((F, np.zeros((self.ne,1))))
+            Le = np.hstack((L, -np.ones((self.Nc*2*(self.nz+self.nu)+2*self.nz,self.ne))))
 
-    def lambda_simpson(x,u,nx,nu,ny,Jfx,Jfu,Jhx,stages):
-        # FUNCTION LAMBDA_SIMPSON
-        # Simpson rule integrator between 0 and 1 with chosen resolution (stages)
-        # used to get A,B matrices symbolically to be used at gridpoints
+            # describe equality constraints
+            self.c_terminal = np.vstack((r[-self.ny:,:],np.zeros((self.nx,1))))
+            A = (self.E_terminal @ self.Sx) @ Gamma
+            b = self.c_terminal-(self.E_terminal @ self.Sx) @ Phi @ Z0[:self.nz]
+            # add soft constraints
+            Ae = np.hstack((A,np.zeros((self.nz,1))))
+
+            # opt_result = qp.solve_qp(self.Ge,Fe,solver="osqp",initvals=np.hstack((dU0[:,0],0)))
+            opt_result = qp.solve_qp(self.Ge,Fe,Le,self.c+W,solver="osqp",initvals=np.hstack((dU0[:,0],0)))
+
+            dU0[:,0] = opt_result[:self.Nc*self.nu]
+
+            # save previous iteration of U_1
+            U_1_old = np.copy(self.U_1)
+            # compute U_1 from dU0 and previous data
+            for i in range(1,self.Nc+1):
+                self.U_1[(i*self.nu):(i*self.nu+self.nu),:] = dU0[((i-1)*self.nu):((i-1)*self.nu+self.nu),:].copy() \
+                    + self.U_1[((i-1)*self.nu):((i-1)*self.nu+self.nu),:].copy()
+
+            # simuate X1 with RK4 from U0 computed above
+            x_sim = self.X_1[self.nx:self.nx*2,0].copy()
+            U_sim = self.U_1[self.nu:,0].copy()
+            X1 = np.zeros((self.nx*self.Nc,1))
+            for j in range(self.Nc):
+                x_sim = self.system.f(x_sim, U_sim[j])
+                X1[(j)*self.nx:(j+1)*self.nx,0] = x_sim.copy()
+
+            # Determine Y0 and dX1 from X1 and previous data
+            dX1 = X1 - np.hstack((self.X_1[self.nx:self.nx*2,0],X1[:-self.nx,0]))[np.newaxis].T
+            Y1 = np.hstack(np.split(X1,self.Nc))[1,:][np.newaxis].T
+            Y0 = np.vstack((self.Y_1[self.ny:self.ny*2,:], Y1[:-self.ny,:]))
+
+            # overwrite previous predicted states and output with new predicted states and output
+            self.Y_1[2*self.ny:,0] = Y0[self.ny:-self.ny,0].copy(); dX0[self.nx:,0] = dX1[:-self.nx,0].copy() #change the shifting on the output to be consequential
+            
+            # determine new X_1 states from known x0 and predicted dX0
+            for i in range(2,self.Nc+1):
+                self.X_1[(i*self.nx):(i*self.nx+self.nx),:] = dX0[((i-1)*self.nx):((i-1)*self.nx+self.nx),:] \
+                    + self.X_1[((i-1)*self.nx):((i-1)*self.nx+self.nx),:]
+            self.X_1[-self.nx:,:] = dX1[-self.nx:,:] + self.X_1[-2*self.nx:-self.nx,:]
+
+            # stopping condition
+            if np.linalg.norm(self.U_1 - U_1_old) < 1e-2:
+                break
+
+        u0 = self.U_1[self.nu:self.nu*2,0].copy()
+        return denorm_input(u0, self.norm)
         
-        A = np.zeros([nx,nx])
-        B = np.zeros([nx,nu])
-        C = np.zeros([ny,nx])
-        lambda0 = 0
-        dlam = 1/stages
+    def convertReference(self, reference):
+        """
+        Returns reference of correct shape for controller
 
-        for i in np.arange(stages):
-            A = A + dlam*1/6*(Jfx(lambda0*x,lambda0*u) + 4*Jfx((lambda0+dlam/2)*x,(lambda0+dlam/2)*u) + Jfx((lambda0+dlam)*x,(lambda0+dlam)*u))
-            B = B + dlam*1/6*(Jfu(lambda0*x,lambda0*u) + 4*Jfu((lambda0+dlam/2)*x,(lambda0+dlam/2)*u) + Jfu((lambda0+dlam)*x,(lambda0+dlam)*u))
-            C = C + dlam*1/6*(Jhx(lambda0*x,lambda0*u) + 4*Jhx((lambda0+dlam/2)*x,(lambda0+dlam/2)*u) + Jhx((lambda0+dlam)*x,(lambda0+dlam)*u))
-            lambda0 = lambda0 + dlam
-                
-        return A,B,C
+        Parameters
+        ----------
+            reference : int (or) np.ndarray
+                reference to be tracked by QP of MPC
 
-    def lpv(self):
-        # take state and input predictions and return lpv representation of A,B,C,D matrices
-        # self.list_A = 
-        # self.list_B = 
-        # self.list_C = 
+        """
+
+        # convert references of single value to array for ny==1
+        if type(reference) != numpy.ndarray and self.ny==1:
+            reference = np.tile(reference,self.Nc)
+
+        # Add extra dimension if possible and required to reference
+        if len(reference.shape) == 1 and self.ny == 1:
+            reference = reference[np.newaxis]
+
+        # Return error if reference cannot be handled by controller
+        if len(reference.shape) > 2:
+            raise ValueError("Reference has to many dimensions for controller.")
+        
+        return reference
+    
+    def update(self, q1, w0, x1=None):
+        """
+        Updates class' prediction lists by one timestep
+
+        Parameters
+        ----------
+            y1 : np.ndarray
+                measurement of system
+            u0 : np.ndarray
+                optimal input applied to system for measurement
+            x1 : np.ndarray
+                full state measurement of system
+
+        """
+        y1 = norm_output(q1, self.norm)
+        u0 = norm_input(w0, self.norm)
+
+        self.X_1[:-self.nx, :] = self.X_1[self.nx:, :]; self.X_1[self.nx:2*self.nx, :] = x1.copy()
+        self.U_1[:-self.nu, :] = self.U_1[self.nu:, :]
+        self.Y_1[:-self.ny, :] = self.Y_1[self.ny:, :]; self.Y_1[self.ny:2*self.ny, :] = y1[np.newaxis].T.copy()
+
         return
-
-if __name__=='__main__':
-    A = np.array([[-1/2,1/2],[1/2,0]]); B = np.array([[1],[0]])
-    C = np.array([[1,0]])
-    Nc = 5
-    nx = 2; nu = 1; ny=1
-    controller = Controller_lin_mpc(Nc,nx,nu,ny,A,B,C=C)
-    system = LTI()
-    system.reset_state()
-
-    current_state = 0.2*np.ones((nx, 1))
-    system.x = current_state[:,0]
-    reference = np.zeros((ny, 1))
-
-    Nsim = 5
-    state_log = np.zeros((Nsim,nx))
-    state_log[0] = current_state[:,0]
-
-    for t in range(Nsim,1):
-        u = controller(reference,current_state)
-        system.x = system.f(system.x, u[:,0])
-        current_state[:,:] = np.array([system.x]).T
-        state_log[t] = current_state[:,0]
-
-    plt.subplot(1,2,1)
-    plt.plot(state_log[:,0])
-    plt.subplot(1,2,2)
-    plt.plot(state_log[:,1])
-    plt.show()
