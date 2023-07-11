@@ -3,6 +3,7 @@ import matplotlib.pyplot as plt
 from NonlinearController.controllers import VelocityMpcController
 from NonlinearController.systems import FullMassSpringDamper
 from NonlinearController.models import CasADi_model, odeCasADiMassSpringDamper
+import time
 
 ##################  System  #######################
 dt = 0.002
@@ -22,7 +23,7 @@ else:
     
 
 ##################  MPC controller  #######################
-Nc=4; max_iter = 5; nr_sim_steps = 30
+Nc=5; max_iter = 5; nr_sim_steps = 60
 wlim = 20
 qlim = 1
 nx = 2; nz = nx+ny; ne = 1
@@ -39,7 +40,7 @@ controller = VelocityMpcController(system, model, Nc, Q1, Q2, R, P, qlim, wlim, 
 w0 = 0; q0 = [0.0]
 
 ##################  Reference  #######################
-a = 1.5; reference_x = np.hstack((np.ones(10)*a,np.ones(10)*0,np.ones(60)*-a))*1e-3
+a = 1.5; reference_x = np.hstack((np.ones(20)*a,np.ones(20)*0,np.ones(60)*-a))*1e-3
 reference = reference_x[np.newaxis]
 
 ##################  Logging  #######################
@@ -47,7 +48,9 @@ log_q = np.zeros((ny,nr_sim_steps))
 log_w = np.zeros((nu,nr_sim_steps))
 
 ##################  Control Loop  #######################
-for k in range(30):
+sim_start_time = time.time()
+
+for k in range(nr_sim_steps):
     w0 = controller.QP_solve(reference_x[k])
     system.x = system.f(system.x, w0[0])
     dx_out, x_out = system.h(system.x, w0[0])
@@ -57,10 +60,13 @@ for k in range(30):
     log_q[:,k] = q1
     log_w[:,k] = w0
 
-##################  Plots  #######################
-fig1 = plt.figure(figsize=[10, 16])
+sim_end_time = time.time()
+print("Sim duration: " + str(sim_end_time - sim_start_time))
 
-plt.subplot(4,1,1)
+##################  Plots  #######################
+fig1 = plt.figure(figsize=[10, 6])
+
+plt.subplot(2,1,1)
 plt.plot(np.arange(nr_sim_steps)*dt, log_w[0,:], label='system input')
 # plt.plot(np.arange(nr_sim_steps)*dt, np.hstack((log_u_lpv[1:],log_u_lpv[-1])), label='lpv input')
 # plt.plot(np.arange(nr_sim_steps)*dt, np.ones(nr_sim_steps)*wlim, 'r-.')#, label='max')
@@ -71,7 +77,7 @@ plt.grid()
 plt.legend(loc='lower right')
 
 
-plt.subplot(4,1,2)
+plt.subplot(2,1,2)
 plt.plot(np.arange(nr_sim_steps)*dt, log_q[0,:], label='system output')
 plt.plot(np.arange(nr_sim_steps)*dt, reference[0,:nr_sim_steps], '--', label='reference')
 plt.xlabel("time [s]")
