@@ -186,12 +186,16 @@ def CasADi_velocity_lpv_embedding(expr_f, expr_h, x, u, ny, n_stages=20, numeric
     u0 = MX.sym("u0",nu,1)
 
     if numerical_method == 1:
+        print("Rectangular method")
         [A_sym, B_sym, C_sym] = velocity_lambda_rect(x0,dx,u0,du,nx,nu,ny,Jfx,Jfu,Jhx,n_stages)
     elif numerical_method == 2:
+        print("Trapezian method")
         [A_sym, B_sym, C_sym] = velocity_lambda_trap(x0,dx,u0,du,nx,nu,ny,Jfx,Jfu,Jhx,n_stages)
     elif numerical_method == 3:
+        print("Simpson method")
         [A_sym, B_sym, C_sym] = velocity_lambda_simpsons(x0,dx,u0,du,nx,nu,ny,Jfx,Jfu,Jhx,n_stages)
     elif numerical_method == 4:
+        print("MMVT method")
         [A_sym, B_sym, C_sym] = velocity_lambda_MMVT(x0,dx,u0,du,nx,nu,ny,Jfx,Jfu,Jhx,n_stages)
     else:
         print("Numerical method not recognised.")
@@ -332,9 +336,9 @@ class velocity_lpv_embedder():
         return list_A, list_B, list_C
     
 class velocity_lpv_embedder_autograd():
-    def __init__(self, ss_enc, Nc, n_stages=20):
+    def __init__(self, ss_enc, Nc, n_stages=20, numerical_method=3):
         if torch.cuda.is_available(): 
-            dev = "cpu" 
+            dev = "gpu" 
         else: 
             dev = "cpu" 
         self.device = torch.device(dev) 
@@ -350,16 +354,48 @@ class velocity_lpv_embedder_autograd():
         self.JacF = vmap(jacrev(ss_enc.fn.to(self.device).float(), argnums=(0,1)))
         self.JacH = vmap(jacrev(ss_enc.hn.to(self.device).float()))
 
-        self.mult_fA = (torch.from_numpy(np.tile(np.vstack((np.ones((1,self.nx,self.nx)), 4*np.ones((1,self.nx,self.nx)), np.ones((1,self.nx,self.nx)))),(n_stages*Nc,1,1)))*self.dlam/6).to(self.device)
-        self.mult_fB = (torch.from_numpy(np.tile(np.vstack((np.ones((1,self.nx,self.nu)), 4*np.ones((1,self.nx,self.nu)), np.ones((1,self.nx,self.nu)))),(n_stages*Nc,1,1)))*self.dlam/6).to(self.device)
-        self.mult_fC = (torch.from_numpy(np.tile(np.vstack((np.ones((1,self.ny,self.nx)), 4*np.ones((1,self.ny,self.nx)), np.ones((1,self.ny,self.nx)))),(n_stages*Nc,1,1)))*self.dlam/6).to(self.device)
-
         self.Lambda = np.array([])
         lambda0 = 0
-        for i in np.arange(n_stages):
-            self.Lambda = np.hstack((self.Lambda, lambda0, lambda0 + self.dlam/2, lambda0 + self.dlam)) # Simpson
-            lambda0 = lambda0 + self.dlam
-        n_int_comp = 3
+
+        if numerical_method == 1: # Rectangular
+            print("Rectangular method")
+            self.mult_fA = (torch.from_numpy(np.tile(np.vstack((np.ones((1,self.nx,self.nx)))),(n_stages*Nc,1,1)))*self.dlam).to(self.device)
+            self.mult_fB = (torch.from_numpy(np.tile(np.vstack((np.ones((1,self.nx,self.nu)))),(n_stages*Nc,1,1)))*self.dlam).to(self.device)
+            self.mult_fC = (torch.from_numpy(np.tile(np.vstack((np.ones((1,self.ny,self.nx)))),(n_stages*Nc,1,1)))*self.dlam).to(self.device)
+            for i in np.arange(n_stages):
+                self.Lambda = np.hstack((self.Lambda, lambda0 + self.dlam/2))
+                lambda0 = lambda0 + self.dlam
+            n_int_comp = 1
+        elif numerical_method == 2: # Trapezian
+            print("Trapezian method")
+            self.mult_fA = (torch.from_numpy(np.tile(np.vstack((np.ones((1,self.nx,self.nx)), np.ones((1,self.nx,self.nx)))),(n_stages*Nc,1,1)))*self.dlam/2).to(self.device)
+            self.mult_fB = (torch.from_numpy(np.tile(np.vstack((np.ones((1,self.nx,self.nu)), np.ones((1,self.nx,self.nu)))),(n_stages*Nc,1,1)))*self.dlam/2).to(self.device)
+            self.mult_fC = (torch.from_numpy(np.tile(np.vstack((np.ones((1,self.ny,self.nx)), np.ones((1,self.ny,self.nx)))),(n_stages*Nc,1,1)))*self.dlam/2).to(self.device)
+            for i in np.arange(n_stages):
+                self.Lambda = np.hstack((self.Lambda, lambda0, lambda0 + self.dlam))
+                lambda0 = lambda0 + self.dlam
+            n_int_comp = 2
+        elif numerical_method == 3: # Simpson
+            print("Simpson method")
+            self.mult_fA = (torch.from_numpy(np.tile(np.vstack((np.ones((1,self.nx,self.nx)), 4*np.ones((1,self.nx,self.nx)), np.ones((1,self.nx,self.nx)))),(n_stages*Nc,1,1)))*self.dlam/6).to(self.device)
+            self.mult_fB = (torch.from_numpy(np.tile(np.vstack((np.ones((1,self.nx,self.nu)), 4*np.ones((1,self.nx,self.nu)), np.ones((1,self.nx,self.nu)))),(n_stages*Nc,1,1)))*self.dlam/6).to(self.device)
+            self.mult_fC = (torch.from_numpy(np.tile(np.vstack((np.ones((1,self.ny,self.nx)), 4*np.ones((1,self.ny,self.nx)), np.ones((1,self.ny,self.nx)))),(n_stages*Nc,1,1)))*self.dlam/6).to(self.device)
+            for i in np.arange(n_stages):
+                self.Lambda = np.hstack((self.Lambda, lambda0, lambda0 + self.dlam/2, lambda0 + self.dlam))
+                lambda0 = lambda0 + self.dlam
+            n_int_comp = 3
+        elif numerical_method == 4: # MMVT
+            print("MMVT method")
+            self.mult_fA = (torch.from_numpy(np.tile(np.vstack((np.ones((1,self.nx,self.nx)))),(n_stages*Nc,1,1)))*self.dlam).to(self.device)
+            self.mult_fB = (torch.from_numpy(np.tile(np.vstack((np.ones((1,self.nx,self.nu)))),(n_stages*Nc,1,1)))*self.dlam).to(self.device)
+            self.mult_fC = (torch.from_numpy(np.tile(np.vstack((np.ones((1,self.ny,self.nx)))),(n_stages*Nc,1,1)))*self.dlam).to(self.device)
+            for i in np.arange(n_stages):
+                self.Lambda = np.hstack((self.Lambda, lambda0 + self.dlam))
+                lambda0 = lambda0 + self.dlam
+            n_int_comp = 1
+        else:
+            print("Numerical method not recognised.")
+
         self.batch_size = Nc*n_stages*n_int_comp
 
     def __call__(self, X, U):
