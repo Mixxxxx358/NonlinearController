@@ -1,6 +1,9 @@
 import numpy as np
 import random
 
+def wrapDisc(list):
+    return (list+np.pi)%(2*np.pi) - np.pi
+
 def randomLevelReference(Nsim, nt_range, level_range):
     x_reference_list = np.array([])
     Nsim_remaining = Nsim
