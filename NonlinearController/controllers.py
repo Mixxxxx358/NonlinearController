@@ -23,7 +23,7 @@ class VelocityMpcController():
         Returns optimal input for given reference and progresses controller by one step.
     """
 
-    def __init__(self, system, model, Nc, Q1, Q2, R, P, qlim, wlim, max_iter=1, n_stages=1, numerical_method=1):
+    def __init__(self, system, model, Nc, Q1, Q2, R, P, qlim, wlim, nr_sim_steps, max_iter=1, n_stages=1, numerical_method=1):
         """
         Constructs all the necessary attributes for the person object.
 
@@ -79,9 +79,17 @@ class VelocityMpcController():
 
         self.Offline_QP()
 
+        # logging
+        self.nr_sim_steps = nr_sim_steps
+        self.sim_step = 0
+        self.log_solv_t = np.zeros(self.nr_sim_steps)
+        self.log_fact_t = np.zeros(self.nr_sim_steps)
+        self.log_comp_t = np.zeros(self.nr_sim_steps)
+        self.log_iterations = np.zeros(self.nr_sim_steps)
+
     def Offline_QP(self):
         """
-        Returns optimal input for given reference and progresses controller by one step.
+        Initiates the variables and objects required for the QP solving online.
         """
 
         self.Omega1 = get_Omega(self.Nc, self.Q1)
@@ -89,12 +97,12 @@ class VelocityMpcController():
         self.Psi = get_Psi(self.Nc, self.R)
 
         # extended objective matrices for soft constraints
-        e_lambda = 1e8 # weighting of minimizing e in objective function
+        e_lambda = 1e10 # weighting of minimizing e in objective function
         self.Ge = np.zeros((self.Nc*self.nu+self.ne,self.Nc*self.nu+self.ne)) 
         self.Ge[-self.ne:,-self.ne:] = e_lambda
 
         if self.model_type == "encoder":
-            self.embedder = velocity_lpv_embedder_autograd(ss_enc=self.model, Nc=self.Nc, n_stages=self.n_stages)
+            self.embedder = velocity_lpv_embedder_autograd(ss_enc=self.model, Nc=self.Nc, n_stages=self.n_stages, numerical_method=self.numerical_method)
         else:
             self.embedder = CasADi_velocity_lpv_embedder(model=self.model, Nc=self.Nc, n_stages=self.n_stages, numerical_method=self.numerical_method)
 
@@ -162,6 +170,8 @@ class VelocityMpcController():
     
         #++++++++++++++++++ start iteration +++++++++++++++++++++++
         for iteration in range(self.max_iter):
+            comp_time_start = time.time()
+
             # determine predicted velocity states and output
             dX0 = differenceVector(self.X_1[:-self.nx], self.nx)
             dU0 = differenceVector(self.U_1, self.nu)
@@ -169,14 +179,18 @@ class VelocityMpcController():
             Z0 = extendState(self.Y_1, dX0, self.nx, self.ny, self.Nc)
 
             # determine lpv state space dependencies
+            fact_time_start = time.time()
+
             list_A, list_B, list_C = self.embedder(self.X_1, self.U_1)
             list_ext_A, list_ext_B, list_ext_C = extendABC(list_A, list_B, list_C, self.nx, self.ny, self.nu, self.Nc)
             
+            self.log_fact_t[self.sim_step] = self.log_fact_t[self.sim_step] + time.time() - fact_time_start
+
+            # describe optimization problem
             Phi = get_Phi(list_ext_A, self.Nc, self.nz)
             Gamma = get_Gamma(list_ext_A, list_ext_B, self.Nc, self.nz, self.nu)
             Z = getZ(list_ext_C,self.Nc,self.ny,self.nz)
 
-            # describe optimization problem
             G = 2*(Gamma.T @ (Z.T @ (self.Omega1 + self.Sy.T @ self.P @ self.Sy) @ Z + self.Omega2) @ Gamma + self.Psi)
             F = 2*(Gamma.T @ (Z.T @ (self.Omega1 @ (Z @ Phi @ Z0[:self.nz] - r) + \
                                      self.Sy.T @ self.P @ (self.Sy @ Z @ Phi @ Z0[:self.nz] - r[-self.ny:])) + self.Omega2 @ Phi @ Z0[:self.nz]))
@@ -197,9 +211,18 @@ class VelocityMpcController():
             # add soft constraints
             Ae = np.hstack((A,np.zeros((self.nz,1))))
 
-            # opt_result = qp.solve_qp(self.Ge,Fe,solver="osqp",initvals=np.hstack((dU0[:,0],0)))
-            opt_result = qp.solve_qp(self.Ge,Fe,Le,self.c+W,solver="osqp",initvals=np.hstack((dU0[:,0],0)))
+            # solve QP problem
+            solve_time_start = time.time()
 
+            # opt_result = qp.solve_qp(self.Ge,Fe,solver="osqp",initvals=np.hstack((dU0[:,0],0)))
+            # opt_result = qp.solve_qp(self.Ge,Fe,Le,self.c+W,solver="osqp",initvals=np.hstack((dU0[:,0],0)))
+            opt_result = qp.solve_qp(P=self.Ge,q=Fe,G=Le,h=self.c+W,solver="osqp",initvals=np.hstack((dU0[:,0],0)))
+            # opt_result = qp.solve_qp(P=self.Ge,q=Fe,A=Ae,b=b,solver="osqp",initvals=np.hstack((dU0[:,0],0)))
+            # opt_result = qp.solve_qp(P=self.Ge,q=Fe,G=Le,h=(self.c+W)[:,0],A=Ae,b=b[:,0],solver="osqp",initvals=np.hstack((dU0[:,0],0)))
+
+            self.log_solv_t[self.sim_step] = self.log_solv_t[self.sim_step] + time.time() - solve_time_start
+
+            # extract input from solution of QP
             dU0[:,0] = opt_result[:self.Nc*self.nu]
 
             # save previous iteration of U_1
@@ -236,9 +259,14 @@ class VelocityMpcController():
                     + self.X_1[((i-1)*self.nx):((i-1)*self.nx+self.nx),:]
             self.X_1[-self.nx:,:] = dX1[-self.nx:,:] + self.X_1[-2*self.nx:-self.nx,:]
 
+            self.log_comp_t[self.sim_step] = self.log_comp_t[self.sim_step] + time.time() - comp_time_start
+
             # stopping condition
             if np.linalg.norm(self.U_1 - U_1_old) < 1e-1:
                 break
+
+        self.log_iterations[self.sim_step] = iteration
+        self.sim_step += 1
 
         u0 = self.U_1[self.nu:self.nu*2,0].copy()
         return denorm_input(u0, self.norm)
@@ -301,3 +329,7 @@ class VelocityMpcController():
         self.Y_1[:-self.ny, :] = self.Y_1[self.ny:, :]; self.Y_1[self.ny:2*self.ny, :] = y1[np.newaxis].T.copy()
 
         return
+    
+    def computationTimeLogging(self):
+        return np.max(self.log_comp_t)*1000, np.mean(self.log_comp_t)*1000, \
+            np.std(self.log_comp_t)*1000, np.mean(self.log_solv_t)*1000, np.mean(self.log_fact_t)*1000
