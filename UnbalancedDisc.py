@@ -2,7 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import time
 import deepSI
-from NonlinearController.utils import randomLevelReferenceSteps, wrapDisc, randomLevelReference
+from NonlinearController.utils import randomLevelReferenceSteps, wrapDisc, randomLevelReference, rmse
 from NonlinearController.controllers import VelocityMpcController
 from NonlinearController.systems import FullUnbalancedDisc
 from NonlinearController.models import CasADi_model, odeCasADiUnbalancedDisc
@@ -44,7 +44,7 @@ ode = odeCasADiUnbalancedDisc()
 model = CasADi_model(ode, (1), dt, nx=2, nu=nu)
 
 ##################  MPC controller parameters  #######################
-Nc=5; max_iter = 1; nr_sim_steps = 100
+Nc=4; max_iter = 1; nr_sim_steps = 100
 wlim = 8
 qlim = 1000
 nx = 2; nz = nx+ny; ne = 1
@@ -63,28 +63,34 @@ a = 3.1; reference_theta = np.hstack((np.ones(20)*a,np.ones(20)*-a,np.ones(20)*a
 reference = reference_theta[np.newaxis]
 
 ##################  Control Loop MVT  #######################
-steps = np.arange(1,20,1)
+steps = np.arange(1,20,2)
 log_w_inf, log_q_inf = controlLoop(reference_theta, system, model, nr_sim_steps, nu, ny, Q1, Q2, R, P, qlim, wlim, max_iter, 200, 3)
 
 diff_MMVT = np.zeros(len(steps))
 for i in range(len(steps)):
     log_w, log_q = controlLoop(reference_theta, system, model, nr_sim_steps, nu, ny, Q1, Q2, R, P, qlim, wlim, max_iter, steps[i], 4)
-    diff_MMVT[i] = np.sum(np.abs(log_q[0,:] - log_q_inf[0,:]))
+    # diff_MMVT[i] = np.sum(np.abs(log_q[0,:] - log_q_inf[0,:]))
+    diff_MMVT[i] = rmse(log_q[0,:], log_q_inf[0,:])
 
 diff_Mid = np.zeros(len(steps))
 for i in range(len(steps)):
     log_w, log_q = controlLoop(reference_theta, system, model, nr_sim_steps, nu, ny, Q1, Q2, R, P, qlim, wlim, max_iter, steps[i], 1)
-    diff_Mid[i] = np.sum(np.abs(log_q[0,:] - log_q_inf[0,:]))
+    # diff_Mid[i] = np.sum(np.abs(log_q[0,:] - log_q_inf[0,:]))
+    diff_Mid[i] = rmse(log_q[0,:], log_q_inf[0,:])
+    
 
 diff_Trap = np.zeros(len(steps))
 for i in range(len(steps)):
     log_w, log_q = controlLoop(reference_theta, system, model, nr_sim_steps, nu, ny, Q1, Q2, R, P, qlim, wlim, max_iter, steps[i], 2)
-    diff_Trap[i] = np.sum(np.abs(log_q[0,:] - log_q_inf[0,:]))
+    # diff_Trap[i] = np.sum(np.abs(log_q[0,:] - log_q_inf[0,:]))
+    diff_Trap[i] = rmse(log_q[0,:], log_q_inf[0,:])
 
 diff_Simps = np.zeros(len(steps))
 for i in range(len(steps)):
     log_w, log_q = controlLoop(reference_theta, system, model, nr_sim_steps, nu, ny, Q1, Q2, R, P, qlim, wlim, max_iter, steps[i], 3)
-    diff_Simps[i] = np.sum(np.abs(log_q[0,:] - log_q_inf[0,:]))
+    # diff_Simps[i] = np.sum(np.abs(log_q[0,:] - log_q_inf[0,:]))
+    diff_Simps[i] = rmse(log_q[0,:], log_q_inf[0,:])
+
 
 ##################  Plots  #######################
 fig1 = plt.figure(figsize=[8.9, 8])

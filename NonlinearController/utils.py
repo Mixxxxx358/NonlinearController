@@ -1,6 +1,9 @@
 import numpy as np
 import random
 
+def rmse(array, target):
+    return np.sqrt(np.sum(np.square(array[:] - target[:])))/len(array)
+
 def wrapDisc(list):
     return (list+np.pi)%(2*np.pi) - np.pi
 
