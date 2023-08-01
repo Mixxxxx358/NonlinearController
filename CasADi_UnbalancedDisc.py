@@ -1,6 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import time
+import deepSI
 from NonlinearController.utils import randomLevelReferenceSteps, wrapDisc, randomLevelReference
 from NonlinearController.controllers import VelocityMpcController
 from NonlinearController.systems import FullUnbalancedDisc
@@ -18,24 +19,22 @@ ode = odeCasADiUnbalancedDisc()
 model = CasADi_model(ode, (1), dt, nx=2, nu=nu)
 
 ##################  MPC controller parameters  #######################
-Nc=10; max_iter = 1; nr_sim_steps = 400
-wlim = 4
-qlim = 1.2
+Nc=7; max_iter = 1; nr_sim_steps = 150
+wlim = 8
+qlim = 1000
 nx = 2; nz = nx+ny; ne = 1
 
-Q1 = np.zeros((ny,ny)); np.fill_diagonal(Q1, [200])
-Q2 = np.zeros((nz,nz)); Q2[ny:,ny:] = np.eye(nx)
-R = np.eye(nu)*0.1
-P = np.eye(ny)*0.0001
-
-##################  Initial Conditions  #######################
-w0 = 0; q0 = [0.0]
+Q1 = np.zeros((ny,ny)); np.fill_diagonal(Q1, [500])
+Q2 = np.zeros((nz,nz)); Q2[ny:,ny:] = np.eye(nx)*1
+R = np.eye(nu)*1
+P = np.eye(ny)*0.1
 
 ##################  Reference  #######################
-# a = 2.0; reference_theta = np.hstack((np.ones(20)*a,np.ones(20)*-a,np.ones(60)*a))
-# reference_theta = randomLevelReference(nr_sim_steps+Nc,[20,25],[-2.1,2.1])
-reference_theta = np.load("NonlinearController/references/setPoints.npy")
-# reference_theta = np.sin(np.arange(0,nr_sim_steps+Nc)/np.pi*2.5)*3.1
+# a = 3.1; reference_theta = np.hstack((np.ones(20)*a,np.ones(20)*-a,np.ones(20)*a/2,np.ones(20)*-a/2,np.ones(40)*0))
+# reference_theta = randomLevelReference(nr_sim_steps+Nc,[20,25],[-3.1,3.1])
+# reference_theta = np.load("NonlinearController/references/setPoints.npy")
+reference_theta = deepSI.deepSI.exp_design.multisine(nr_sim_steps+Nc, pmax=10, n_crest_factor_optim=10)*1.
+# reference_theta = np.sin(np.arange(0,nr_sim_steps+Nc)/np.pi*1.0)*3.1
 reference = reference_theta[np.newaxis]
 
 ##################  Control Loop MVT  #######################
@@ -44,7 +43,7 @@ log_q_1 = np.zeros((ny,nr_sim_steps))
 log_w_1 = np.zeros((nu,nr_sim_steps))
 
 controller_1 = VelocityMpcController(system, model, Nc, Q1, Q2, R, P, qlim, wlim, nr_sim_steps=nr_sim_steps, \
-                                     max_iter=max_iter, n_stages=1, numerical_method=4)
+                                     max_iter=max_iter, n_stages=5, numerical_method=4)
 
 sim_start_time = time.time()
 
@@ -117,8 +116,8 @@ plt.subplot(2,1,1)
 plt.plot(np.arange(nr_sim_steps)*dt, log_w_1[0,:], label='MVT')
 plt.plot(np.arange(nr_sim_steps)*dt, log_w_2[0,:], label='Rectangular')
 plt.plot(np.arange(nr_sim_steps)*dt, log_w_3[0,:], label='Simpsons')
-plt.plot(np.arange(nr_sim_steps)*dt, np.ones(nr_sim_steps)*wlim, 'r-.', label='max')
-plt.plot(np.arange(nr_sim_steps)*dt, np.ones(nr_sim_steps)*-wlim, 'r-.', label='min')
+# plt.plot(np.arange(nr_sim_steps)*dt, np.ones(nr_sim_steps)*wlim, 'r-.', label='max')
+# plt.plot(np.arange(nr_sim_steps)*dt, np.ones(nr_sim_steps)*-wlim, 'r-.', label='min')
 # plt.xlabel("time [s]")
 plt.ylabel("voltage [V]")
 plt.grid()
