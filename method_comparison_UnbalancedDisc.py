@@ -44,7 +44,7 @@ ode = odeCasADiUnbalancedDisc()
 model = CasADi_model(ode, (1), dt, nx=2, nu=nu)
 
 ##################  MPC controller parameters  #######################
-Nc=4; max_iter = 1; nr_sim_steps = 100
+Nc=5; max_iter = 1; nr_sim_steps = 100
 wlim = 8
 qlim = 1000
 nx = 2; nz = nx+ny; ne = 1
@@ -63,7 +63,7 @@ a = 3.1; reference_theta = np.hstack((np.ones(20)*a,np.ones(20)*-a,np.ones(20)*a
 reference = reference_theta[np.newaxis]
 
 ##################  Control Loop MVT  #######################
-steps = np.arange(1,20,2)
+steps = np.arange(1,10,1)
 log_w_inf, log_q_inf = controlLoop(reference_theta, system, model, nr_sim_steps, nu, ny, Q1, Q2, R, P, qlim, wlim, max_iter, 200, 3)
 
 diff_MMVT = np.zeros(len(steps))
