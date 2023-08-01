@@ -140,6 +140,12 @@ class VelocityMpcController():
         self.U_1 = np.ones((self.Nc+1)*self.nu)[np.newaxis].T*self.u0
         self.Y_1 = np.tile(self.y0[np.newaxis],self.Nc).T
 
+        # run embedding with initial points to load model for embedding
+        if self.model_type == "encoder":
+            for i in range(5):
+                self.embedder(self.X_1, self.U_1)
+
+
     def __call__(self, reference):
         """
         Placeholder
