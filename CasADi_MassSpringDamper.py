@@ -1,6 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import time
+import deepSI
 from NonlinearController.controllers import VelocityMpcController
 from NonlinearController.systems import FullMassSpringDamper
 from NonlinearController.models import CasADi_model, odeCasADiMassSpringDamper
@@ -39,7 +40,8 @@ w0 = 0; q0 = [0.0]
 
 ##################  Reference  #######################
 # a = 3; reference_x = np.hstack((np.ones(20)*a,np.ones(20)*-a,np.ones(60)*a))*1e-3
-reference_x = np.sin(np.arange(0,nr_sim_steps+Nc)/np.pi*2.5)*6e-3
+reference_x = deepSI.deepSI.exp_design.multisine(nr_sim_steps+Nc, pmax=20, n_crest_factor_optim=10)*4e-3
+# reference_x = np.sin(np.arange(0,nr_sim_steps+Nc)/np.pi*2.5)*6e-3
 reference = reference_x[np.newaxis]
 
 ##################  Control Loop 1  #######################
