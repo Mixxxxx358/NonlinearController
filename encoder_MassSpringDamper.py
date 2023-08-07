@@ -18,12 +18,12 @@ ny = system.ny if system.ny is not None else 1
 model = deepSI.load_system("NonlinearController/trained_models/MSD/msd_test_11")
 
 ##################  MPC controller  #######################
-Nc=5; max_iter = 1; nr_sim_steps = 60
-wlim = 70
+Nc=20; max_iter = 1; nr_sim_steps = 100
+wlim = 60
 qlim = 1e-2
 nx = 2; nz = nx+ny; ne = 1
 
-Q1 = np.zeros((ny,ny)); np.fill_diagonal(Q1, [5000])
+Q1 = np.zeros((ny,ny)); np.fill_diagonal(Q1, [100])
 Q2 = np.zeros((nz,nz)); Q2[ny:,ny:] = np.eye(nx)*1
 R = np.eye(nu)*1
 P = np.eye(ny)*0.01
@@ -32,8 +32,9 @@ P = np.eye(ny)*0.01
 w0 = 0; q0 = [0.0]
 
 ##################  Reference  #######################
-# a = 8; reference_x = np.hstack((np.ones(20)*a,np.ones(20)*-a,np.ones(60)*a))*1e-3
-reference_x = np.sin(np.arange(0,nr_sim_steps+Nc)/np.pi*2.5)*6e-3
+a = 5; reference_x = np.hstack((np.ones(20)*a,np.ones(20)*-a,np.ones(20)*a/2,np.ones(20)*-a/2,np.ones(40)*0))*1e-3
+# reference_x = deepSI.deepSI.exp_design.multisine(nr_sim_steps+Nc, pmax=15, n_crest_factor_optim=10)*4e-3
+# reference_x = np.sin(np.arange(0,nr_sim_steps+Nc)/np.pi*2.5)*6e-3
 reference = reference_x[np.newaxis]
 
 ##################  Control Loop 1  #######################
@@ -42,7 +43,7 @@ log_q_1 = np.zeros((ny,nr_sim_steps))
 log_w_1 = np.zeros((nu,nr_sim_steps))
 
 controller_1 = VelocityMpcController(system, model, Nc, Q1, Q2, R, P, qlim, wlim, nr_sim_steps=nr_sim_steps, \
-                                     max_iter=max_iter, n_stages=1, numerical_method=4)
+                                     max_iter=max_iter, n_stages=1, numerical_method=4, model_simulation="LPV")
 
 sim_start_time = time.time()
 
@@ -65,7 +66,7 @@ log_q_2 = np.zeros((ny,nr_sim_steps))
 log_w_2 = np.zeros((nu,nr_sim_steps))
 
 controller_2 = VelocityMpcController(system, model, Nc, Q1, Q2, R, P, qlim, wlim, nr_sim_steps=nr_sim_steps, \
-                                     max_iter=max_iter, n_stages=1, numerical_method=1)
+                                     max_iter=max_iter, n_stages=1, numerical_method=1, model_simulation="LPV")
 
 sim_start_time = time.time()
 
@@ -88,7 +89,7 @@ log_q_3 = np.zeros((ny,nr_sim_steps))
 log_w_3 = np.zeros((nu,nr_sim_steps))
 
 controller_3 = VelocityMpcController(system, model, Nc, Q1, Q2, R, P, qlim, wlim, nr_sim_steps=nr_sim_steps, \
-                                     max_iter=max_iter, n_stages=1, numerical_method=3)
+                                     max_iter=max_iter, n_stages=1, numerical_method=3, model_simulation="LPV")
 
 sim_start_time = time.time()
 

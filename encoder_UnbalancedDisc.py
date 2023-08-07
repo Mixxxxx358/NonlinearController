@@ -20,22 +20,22 @@ model = deepSI.load_system("NonlinearController/trained_models/unbalanced/ud_tes
 
 
 ##################  MPC controller parameters  #######################
-Nc=10; max_iter = 1; nr_sim_steps = 450
-wlim = 4
+Nc=10; max_iter = 1; nr_sim_steps = 60
+wlim = 4.0
 qlim = 1.2
 nx = 2; nz = nx+ny; ne = 1
 
-Q1 = np.zeros((ny,ny)); np.fill_diagonal(Q1, [50])
+Q1 = np.zeros((ny,ny)); np.fill_diagonal(Q1, [5])
 Q2 = np.zeros((nz,nz)); Q2[ny:,ny:] = np.eye(nx)
-R = np.eye(nu)*1
+R = np.eye(nu)
 P = np.eye(ny)*0.0001
 
 ##################  Initial Conditions  #######################
 w0 = 0; q0 = [0.0]
 
 ##################  Reference  #######################
-# a = 0.8; reference_theta = np.hstack((np.ones(20)*a,np.ones(20)*-a,np.ones(60)*a))
-reference_theta = np.load("NonlinearController/references/setPoints.npy")
+a = 1.0; reference_theta = np.hstack((np.ones(20)*a,np.ones(20)*-a,np.ones(60)*a))
+# reference_theta = np.load("NonlinearController/references/setPoints.npy")
 # reference_theta = randomLevelReference(nr_sim_steps+Nc,[10,15],[-1.,1.])
 # reference_theta = np.sin(np.arange(0,nr_sim_steps+Nc)/np.pi*3.5)*1
 reference = reference_theta[np.newaxis]
@@ -46,7 +46,7 @@ log_q_1 = np.zeros((ny,nr_sim_steps))
 log_w_1 = np.zeros((nu,nr_sim_steps))
 
 controller_1 = VelocityMpcController(system, model, Nc, Q1, Q2, R, P, qlim, wlim, nr_sim_steps=nr_sim_steps, \
-                                     max_iter=max_iter, n_stages=1, numerical_method=4)
+                                     max_iter=max_iter, n_stages=1, numerical_method=4, model_simulation="LPV")
 
 sim_start_time = time.time()
 
@@ -70,7 +70,7 @@ log_q_2 = np.zeros((ny,nr_sim_steps))
 log_w_2 = np.zeros((nu,nr_sim_steps))
 
 controller_2 = VelocityMpcController(system, model, Nc, Q1, Q2, R, P, qlim, wlim, nr_sim_steps=nr_sim_steps, \
-                                     max_iter=max_iter, n_stages=1, numerical_method=1)
+                                     max_iter=max_iter, n_stages=1, numerical_method=1, model_simulation="LPV")
 
 sim_start_time = time.time()
 
@@ -94,7 +94,7 @@ log_q_3 = np.zeros((ny,nr_sim_steps))
 log_w_3 = np.zeros((nu,nr_sim_steps))
 
 controller_3 = VelocityMpcController(system, model, Nc, Q1, Q2, R, P, qlim, wlim, nr_sim_steps=nr_sim_steps, \
-                                      max_iter=max_iter, n_stages=1, numerical_method=3)
+                                      max_iter=max_iter, n_stages=1, numerical_method=3, model_simulation="LPV")
 
 sim_start_time = time.time()
 

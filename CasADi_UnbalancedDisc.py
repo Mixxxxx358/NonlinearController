@@ -19,21 +19,21 @@ ode = odeCasADiUnbalancedDisc()
 model = CasADi_model(ode, (1), dt, nx=2, nu=nu)
 
 ##################  MPC controller parameters  #######################
-Nc=7; max_iter = 1; nr_sim_steps = 150
-wlim = 8
+Nc=7; max_iter = 1; nr_sim_steps = 100
+wlim = 6
 qlim = 1000
 nx = 2; nz = nx+ny; ne = 1
 
-Q1 = np.zeros((ny,ny)); np.fill_diagonal(Q1, [500])
+Q1 = np.zeros((ny,ny)); np.fill_diagonal(Q1, [50])
 Q2 = np.zeros((nz,nz)); Q2[ny:,ny:] = np.eye(nx)*1
 R = np.eye(nu)*1
 P = np.eye(ny)*0.1
 
 ##################  Reference  #######################
-# a = 3.1; reference_theta = np.hstack((np.ones(20)*a,np.ones(20)*-a,np.ones(20)*a/2,np.ones(20)*-a/2,np.ones(40)*0))
+a = 3.1; reference_theta = np.hstack((np.ones(20)*a,np.ones(20)*-a,np.ones(20)*a/2,np.ones(20)*-a/2,np.ones(40)*0))
 # reference_theta = randomLevelReference(nr_sim_steps+Nc,[20,25],[-3.1,3.1])
 # reference_theta = np.load("NonlinearController/references/setPoints.npy")
-reference_theta = deepSI.deepSI.exp_design.multisine(nr_sim_steps+Nc, pmax=10, n_crest_factor_optim=10)*1.
+# reference_theta = deepSI.deepSI.exp_design.multisine(nr_sim_steps+Nc, pmax=10, n_crest_factor_optim=10)*1.
 # reference_theta = np.sin(np.arange(0,nr_sim_steps+Nc)/np.pi*1.0)*3.1
 reference = reference_theta[np.newaxis]
 
@@ -43,12 +43,12 @@ log_q_1 = np.zeros((ny,nr_sim_steps))
 log_w_1 = np.zeros((nu,nr_sim_steps))
 
 controller_1 = VelocityMpcController(system, model, Nc, Q1, Q2, R, P, qlim, wlim, nr_sim_steps=nr_sim_steps, \
-                                     max_iter=max_iter, n_stages=5, numerical_method=4)
+                                     max_iter=max_iter, n_stages=1, numerical_method=1, model_simulation="LPV")
 
 sim_start_time = time.time()
 
 for k in range(nr_sim_steps):
-    w0 = controller_1.QP_solve(reference_theta[k:k+Nc])
+    w0 = controller_1.QP_solve(reference_theta[k])
     system.x = system.f(system.x, w0[0])
     omega1, theta1 = system.h(system.x, w0[0])
     q1 = theta1; x1 = np.vstack((omega1, theta1))
@@ -67,12 +67,12 @@ log_q_2 = np.zeros((ny,nr_sim_steps))
 log_w_2 = np.zeros((nu,nr_sim_steps))
 
 controller_2 = VelocityMpcController(system, model, Nc, Q1, Q2, R, P, qlim, wlim, nr_sim_steps=nr_sim_steps, \
-                                     max_iter=max_iter, n_stages=1, numerical_method=1)
+                                     max_iter=max_iter, n_stages=1, numerical_method=1, model_simulation="True")
 
 sim_start_time = time.time()
 
 for k in range(nr_sim_steps):
-    w0 = controller_2.QP_solve(reference_theta[k:k+Nc])
+    w0 = controller_2.QP_solve(reference_theta[k])
     system.x = system.f(system.x, w0[0])
     omega1, theta1 = system.h(system.x, w0[0])
     q1 = theta1; x1 = np.vstack((omega1, theta1))
@@ -91,12 +91,12 @@ log_q_3 = np.zeros((ny,nr_sim_steps))
 log_w_3 = np.zeros((nu,nr_sim_steps))
 
 controller_3 = VelocityMpcController(system, model, Nc, Q1, Q2, R, P, qlim, wlim, nr_sim_steps=nr_sim_steps, \
-                                     max_iter=max_iter, n_stages=1, numerical_method=3)
+                                     max_iter=max_iter, n_stages=1, numerical_method=1, model_simulation="True")
 
 sim_start_time = time.time()
 
 for k in range(nr_sim_steps):
-    w0 = controller_3.QP_solve(reference_theta[k:k+Nc])
+    w0 = controller_3.QP_solve(reference_theta[k])
     system.x = system.f(system.x, w0[0])
     omega1, theta1 = system.h(system.x, w0[0])
     q1 = theta1; x1 = np.vstack((omega1, theta1))

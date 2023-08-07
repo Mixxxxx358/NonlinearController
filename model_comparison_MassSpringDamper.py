@@ -8,13 +8,13 @@ from NonlinearController.systems import FullMassSpringDamper
 from NonlinearController.models import CasADi_model, odeCasADiUnbalancedDisc
 
 ##################  Simulation function  #######################
-def controlLoop(reference_theta, system, model, nr_sim_steps, nu, ny, Q1, Q2, R, P, qlim, wlim, max_iter, n_stages, numerical_method):
+def controlLoop(reference_theta, system, model, nr_sim_steps, nu, ny, Q1, Q2, R, P, qlim, wlim, max_iter, n_stages, numerical_method, model_simulation):
     system.reset_state()
     log_q = np.zeros((ny,nr_sim_steps))
     log_w = np.zeros((nu,nr_sim_steps))
 
     controller = VelocityMpcController(system, model, Nc, Q1, Q2, R, P, qlim, wlim, nr_sim_steps=nr_sim_steps, \
-                                        max_iter=max_iter, n_stages=n_stages, numerical_method=numerical_method)
+                                        max_iter=max_iter, n_stages=n_stages, numerical_method=numerical_method, model_simulation=, model_simulation)
 
     sim_start_time = time.time()
 
@@ -68,7 +68,7 @@ for nx in range(2,9,2):
     model = deepSI.load_system(base_name + str(nx))
 
     ##################  Control Loop MVT  #######################
-    log_w, log_q = controlLoop(reference_x, system, model, nr_sim_steps, nu, ny, Q1, Q2, R, P, qlim, wlim, max_iter, 1, 1)
+    log_w, log_q = controlLoop(reference_x, system, model, nr_sim_steps, nu, ny, Q1, Q2, R, P, qlim, wlim, max_iter, 1, 1, "LPV")
 
     ##################  Plots  #######################
     plt.plot(np.arange(nr_sim_steps)*dt, log_q[0,:], label=str(nx))

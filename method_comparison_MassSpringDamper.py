@@ -8,13 +8,13 @@ from NonlinearController.systems import FullMassSpringDamper
 from NonlinearController.models import CasADi_model, odeCasADiUnbalancedDisc
 
 ##################  Simulation function  #######################
-def controlLoop(reference_theta, system, model, nr_sim_steps, nu, ny, Q1, Q2, R, P, qlim, wlim, max_iter, n_stages, numerical_method):
+def controlLoop(reference_theta, system, model, nr_sim_steps, nu, ny, Q1, Q2, R, P, qlim, wlim, max_iter, n_stages, numerical_method, model_simulation):
     system.reset_state()
     log_q = np.zeros((ny,nr_sim_steps))
     log_w = np.zeros((nu,nr_sim_steps))
 
     controller_1 = VelocityMpcController(system, model, Nc, Q1, Q2, R, P, qlim, wlim, nr_sim_steps=nr_sim_steps, \
-                                        max_iter=max_iter, n_stages=n_stages, numerical_method=numerical_method)
+                                        max_iter=max_iter, n_stages=n_stages, numerical_method=numerical_method, model_simulation=model_simulation)
 
     sim_start_time = time.time()
 
@@ -62,30 +62,30 @@ reference = reference_x[np.newaxis]
 
 ##################  Control Loop MVT  #######################
 steps = np.arange(1,10,1)
-log_w_inf, log_q_inf = controlLoop(reference_x, system, model, nr_sim_steps, nu, ny, Q1, Q2, R, P, qlim, wlim, max_iter, 200, 3)
+log_w_inf, log_q_inf = controlLoop(reference_x, system, model, nr_sim_steps, nu, ny, Q1, Q2, R, P, qlim, wlim, max_iter, 200, 3, "LPV")
 
 diff_MMVT = np.zeros(len(steps))
 for i in range(len(steps)):
-    log_w, log_q = controlLoop(reference_x, system, model, nr_sim_steps, nu, ny, Q1, Q2, R, P, qlim, wlim, max_iter, steps[i], 4)
+    log_w, log_q = controlLoop(reference_x, system, model, nr_sim_steps, nu, ny, Q1, Q2, R, P, qlim, wlim, max_iter, steps[i], 4, "LPV")
     # diff_MMVT[i] = np.sum(np.abs(log_q[0,:] - log_q_inf[0,:]))
     diff_MMVT[i] = rmse(log_q[0,:], log_q_inf[0,:])
 
 diff_Mid = np.zeros(len(steps))
 for i in range(len(steps)):
-    log_w, log_q = controlLoop(reference_x, system, model, nr_sim_steps, nu, ny, Q1, Q2, R, P, qlim, wlim, max_iter, steps[i], 1)
+    log_w, log_q = controlLoop(reference_x, system, model, nr_sim_steps, nu, ny, Q1, Q2, R, P, qlim, wlim, max_iter, steps[i], 1, "LPV")
     # diff_Mid[i] = np.sum(np.abs(log_q[0,:] - log_q_inf[0,:]))
     diff_Mid[i] = rmse(log_q[0,:], log_q_inf[0,:])
     
 
 diff_Trap = np.zeros(len(steps))
 for i in range(len(steps)):
-    log_w, log_q = controlLoop(reference_x, system, model, nr_sim_steps, nu, ny, Q1, Q2, R, P, qlim, wlim, max_iter, steps[i], 2)
+    log_w, log_q = controlLoop(reference_x, system, model, nr_sim_steps, nu, ny, Q1, Q2, R, P, qlim, wlim, max_iter, steps[i], 2, "LPV")
     # diff_Trap[i] = np.sum(np.abs(log_q[0,:] - log_q_inf[0,:]))
     diff_Trap[i] = rmse(log_q[0,:], log_q_inf[0,:])
 
 diff_Simps = np.zeros(len(steps))
 for i in range(len(steps)):
-    log_w, log_q = controlLoop(reference_x, system, model, nr_sim_steps, nu, ny, Q1, Q2, R, P, qlim, wlim, max_iter, steps[i], 3)
+    log_w, log_q = controlLoop(reference_x, system, model, nr_sim_steps, nu, ny, Q1, Q2, R, P, qlim, wlim, max_iter, steps[i], 3, "LPV")
     # diff_Simps[i] = np.sum(np.abs(log_q[0,:] - log_q_inf[0,:]))
     diff_Simps[i] = rmse(log_q[0,:], log_q_inf[0,:])
 

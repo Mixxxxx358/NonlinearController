@@ -50,7 +50,7 @@ log_q_1 = np.zeros((ny,nr_sim_steps))
 log_w_1 = np.zeros((nu,nr_sim_steps))
 
 controller_1 = VelocityMpcController(system, model, Nc, Q1, Q2, R, P, qlim, wlim, nr_sim_steps=nr_sim_steps, \
-                                     max_iter=max_iter, n_stages=1, numerical_method=4)
+                                     max_iter=max_iter, n_stages=1, numerical_method=4, model_simulation="LPV")
 
 sim_start_time = time.time()
 
@@ -73,7 +73,7 @@ log_q_2 = np.zeros((ny,nr_sim_steps))
 log_w_2 = np.zeros((nu,nr_sim_steps))
 
 controller_2 = VelocityMpcController(system, model, Nc, Q1, Q2, R, P, qlim, wlim, nr_sim_steps=nr_sim_steps, \
-                                     max_iter=max_iter, n_stages=1, numerical_method=1)
+                                     max_iter=max_iter, n_stages=1, numerical_method=1, model_simulation="LPV")
 
 sim_start_time = time.time()
 
@@ -96,7 +96,7 @@ log_q_3 = np.zeros((ny,nr_sim_steps))
 log_w_3 = np.zeros((nu,nr_sim_steps))
 
 controller_3 = VelocityMpcController(system, model, Nc, Q1, Q2, R, P, qlim, wlim, nr_sim_steps=nr_sim_steps, \
-                                     max_iter=max_iter, n_stages=1, numerical_method=3)
+                                     max_iter=max_iter, n_stages=1, numerical_method=3, model_simulation="LPV")
 
 sim_start_time = time.time()
 
