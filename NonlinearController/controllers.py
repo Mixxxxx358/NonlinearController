@@ -23,7 +23,7 @@ class VelocityMpcController():
         Returns optimal input for given reference and progresses controller by one step.
     """
 
-    def __init__(self, system, model, Nc, Q1, Q2, R, P, qlim, wlim, nr_sim_steps, max_iter=1, n_stages=1, numerical_method=1):
+    def __init__(self, system, model, Nc, Q1, Q2, R, P, qlim, wlim, nr_sim_steps, max_iter=1, n_stages=1, numerical_method=1, model_simulation="LPV"):
         """
         Constructs all the necessary attributes for the person object.
 
@@ -61,6 +61,8 @@ class VelocityMpcController():
             self.model_type = "encoder"
         self.nx = model.nx
         self.nz = self.nx+self.ny
+
+        self.model_simulation = model_simulation
 
         self.Nc = Nc
 
@@ -157,7 +159,7 @@ class VelocityMpcController():
 
         """
 
-        return reference
+        raise Exception("Not implemented")
     
     def QP_solve(self, reference):
         """
@@ -238,23 +240,35 @@ class VelocityMpcController():
                 self.U_1[(i*self.nu):(i*self.nu+self.nu),:] = dU0[((i-1)*self.nu):((i-1)*self.nu+self.nu),:].copy() \
                     + self.U_1[((i-1)*self.nu):((i-1)*self.nu+self.nu),:].copy()
 
-            # # simuate X1 with RK4 from U0 computed above
-            # x_sim = self.X_1[self.nx:self.nx*2,0].copy()
-            # U_sim = self.U_1[self.nu:,0].copy()
-            # X1 = np.zeros((self.nx*self.Nc,1))
-            # for j in range(self.Nc):
-            #     x_sim = self.system.f(x_sim, U_sim[j])
-            #     X1[(j)*self.nx:(j+1)*self.nx,0] = x_sim.copy()
+            if self.model_simulation == "True":
+                # simuate X1 with RK4 from U0 computed above
+                x_sim = self.X_1[self.nx:self.nx*2,0].copy()
+                U_sim = self.U_1[self.nu:,0].copy()
+                X1 = np.zeros((self.nx*self.Nc,1))
 
-            # # Determine Y0 and dX1 from X1 and previous data
-            # dX1 = X1 - np.hstack((self.X_1[self.nx:self.nx*2,0],X1[:-self.nx,0]))[np.newaxis].T
-            # Y1 = np.hstack(np.split(X1,self.Nc))[1,:][np.newaxis].T
-            # Y0 = np.vstack((self.Y_1[self.ny:self.ny*2,:], Y1[:-self.ny,:]))
+                for j in range(self.Nc):
+                    if self.model_type == "CasADi":
+                        x_sim = self.system.f(x_sim, U_sim[j])
+                        X1[(j)*self.nx:(j+1)*self.nx,0] = x_sim.copy()
+                    elif self.model_type == "encoder":
+                        xt = torch.Tensor(x_sim[np.newaxis])
+                        ut = torch.Tensor(U_sim[j][np.newaxis][np.newaxis])
+                        x_sim = self.model.fn(xt, ut).detach().numpy()[0,:]
+                        X1[(j)*self.nx:(j+1)*self.nx,0] = x_sim.copy()
+                    else:
+                        raise Exception("invalid model type for forward simulation")
 
-            # predict states
-            Z1 = Phi @ Z0[:self.nz] + Gamma @ dU0
-            # split extended state up into ouputs and velocity states
-            Y0, dX1 = decodeState(Z1, self.nx, self.ny, self.Nc)
+                # Determine Y0 and dX1 from X1 and previous data
+                dX1 = X1 - np.hstack((self.X_1[self.nx:self.nx*2,0],X1[:-self.nx,0]))[np.newaxis].T
+                Y1 = np.hstack(np.split(X1,self.Nc))[1,:][np.newaxis].T
+                Y0 = np.vstack((self.Y_1[self.ny:self.ny*2,:], Y1[:-self.ny,:]))
+            elif self.model_simulation == "LPV":
+                # predict states
+                Z1 = Phi @ Z0[:self.nz] + Gamma @ dU0
+                # split extended state up into ouputs and velocity states
+                Y0, dX1 = decodeState(Z1, self.nx, self.ny, self.Nc)
+            else:
+                raise Exception("invalid forward simulation method")
 
             # overwrite previous predicted states and output with new predicted states and output
             self.Y_1[2*self.ny:,0] = Y0[self.ny:-self.ny,0].copy(); dX0[self.nx:,0] = dX1[:-self.nx,0].copy() #change the shifting on the output to be consequential
