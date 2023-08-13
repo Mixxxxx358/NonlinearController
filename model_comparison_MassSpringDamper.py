@@ -3,36 +3,9 @@ import matplotlib.pyplot as plt
 import time
 import deepSI
 from NonlinearController.utils import randomLevelReferenceSteps, wrapDisc, randomLevelReference, rmse
-from NonlinearController.controllers import VelocityMpcController
+from NonlinearController.controllers import VelocityMpcController, controlLoopTime
 from NonlinearController.systems import FullMassSpringDamper
 from NonlinearController.models import CasADi_model, odeCasADiUnbalancedDisc
-
-##################  Simulation function  #######################
-def controlLoop(reference_theta, system, model, nr_sim_steps, nu, ny, Q1, Q2, R, P, qlim, wlim, max_iter, n_stages, numerical_method, model_simulation):
-    system.reset_state()
-    log_q = np.zeros((ny,nr_sim_steps))
-    log_w = np.zeros((nu,nr_sim_steps))
-
-    controller = VelocityMpcController(system, model, Nc, Q1, Q2, R, P, qlim, wlim, nr_sim_steps=nr_sim_steps, \
-                                        max_iter=max_iter, n_stages=n_stages, numerical_method=numerical_method, model_simulation=, model_simulation)
-
-    sim_start_time = time.time()
-
-    for k in range(nr_sim_steps):
-        w0 = controller.QP_solve(reference_theta[k:k+Nc])
-        system.x = system.f(system.x, w0[0])
-        omega1, theta1 = system.h(system.x, w0[0])
-        q1 = theta1; x1 = np.vstack((omega1, theta1))
-        controller.update(q1, w0, x1)
-
-        log_q[:,k] = q1
-        log_w[:,k] = w0
-
-    sim_end_time = time.time()
-    print("Sim duration: " + str(sim_end_time - sim_start_time))
-    print("Time breakdown: " + str(controller.computationTimeLogging()))
-
-    return log_w, log_q
 
 ##################  System  #######################
 dt = 0.01
@@ -58,7 +31,7 @@ for nx in range(2,9,2):
     qlim = 1e-2
     nz = nx+ny; ne = 1
 
-    Q1 = np.zeros((ny,ny)); np.fill_diagonal(Q1, [500])
+    Q1 = np.zeros((ny,ny)); np.fill_diagonal(Q1, [5])
     Q2 = np.zeros((nz,nz)); Q2[ny:,ny:] = np.eye(nx)*1
     R = np.eye(nu)*1
     P = np.eye(ny)*0.01
@@ -68,10 +41,11 @@ for nx in range(2,9,2):
     model = deepSI.load_system(base_name + str(nx))
 
     ##################  Control Loop MVT  #######################
-    log_w, log_q = controlLoop(reference_x, system, model, nr_sim_steps, nu, ny, Q1, Q2, R, P, qlim, wlim, max_iter, 1, 1, "LPV")
+    log_w, log_q, log_comp_t = controlLoopTime(reference_x, system, model, Nc, nr_sim_steps, nu, ny, Q1, Q2, R, P, qlim, wlim, max_iter, 5, 3, "LPV")
 
     ##################  Plots  #######################
     plt.plot(np.arange(nr_sim_steps)*dt, log_q[0,:], label=str(nx))
+    # plt.plot(np.arange(nr_sim_steps), log_comp_t, label=str(nx))
 
 plt.plot(np.arange(nr_sim_steps)*dt, reference[0,:nr_sim_steps], 'k--', label='reference')
 # plt.plot(np.arange(nr_sim_steps)*dt, np.ones(nr_sim_steps)*qlim, 'r-.', label='max')
