@@ -43,7 +43,7 @@ Nc=10; nr_sim_steps = 450
 
 Q = 100; R = 1
 
-w_min = -4.0; w_max = 4.0
+w_min = -5.0; w_max = 5.0
 q_min = [-1.2]; q_max = [1.2]
 w0 = 0; q0 = 0
 
@@ -227,5 +227,5 @@ for i in range(remove_start,nr_sim_steps):
 
 Sorted = np.sort(T_iter)
 # np.max(T_iter)*1000, np.mean(Sorted[int(nr_sim_steps*0.95):])*1000, np.mean(T_iter)*1000, np.std(T_iter)*1000, np.mean(S_iter)*1000 #in ms
-Times = [np.max(T_iter)*1000,  np.mean(T_iter)*1000, np.std(T_iter)*1000, np.mean(S_iter)*1000] #in ms
+Times = [np.max(T_iter)*1000,  np.median(T_iter)*1000, np.std(T_iter)*1000, np.median(S_iter)*1000] #in ms
 print(Times)
