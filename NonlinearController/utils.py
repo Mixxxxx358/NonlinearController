@@ -44,7 +44,7 @@ def setPointInput(y_ref):
     M = 0.0761844495320390
     tau = 0.397973147009910
 
-    return -(tau * M * g * I)/(Km * J) * np.sin(y_ref)
+    return (tau * M * g * I)/(Km * J) * np.sin(y_ref)
 
 def my_rk4(x,u,f,dt,M):
     # function MY_RK4
