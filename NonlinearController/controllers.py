@@ -128,7 +128,8 @@ class VelocityMpcController():
         self.M_terminal = np.zeros((self.nx+self.ny,self.ny)); self.M_terminal[:self.ny,:] = np.eye(self.ny)
         self.E_terminal = np.zeros((self.nx+self.ny,self.nx)); self.E_terminal[self.ny:,:] = np.eye(self.nx)
         self.Sy = np.hstack((np.zeros((self.ny,(self.Nc-1)*self.ny)),np.eye(self.ny)))
-        self.Sx = np.hstack((np.zeros((self.nx,(self.Nc-1)*self.nz+self.ny)),np.eye(self.nx)))
+        # self.Sx = np.hstack((np.zeros((self.nx,(self.Nc-1)*self.nz+self.ny)),np.eye(self.nx)))
+        Sx = np.zeros((self.nz,self.nz)); Sx[self.ny:, self.ny:] = np.eye(self.nx); self.Sx = np.kron(np.eye(self.Nc),Sx)
 
         # initial predicted states, input, and output
         if self.model_type == "encoder":
@@ -146,7 +147,6 @@ class VelocityMpcController():
         if self.model_type == "encoder":
             for i in range(5):
                 self.embedder(self.X_1, self.U_1)
-
 
     def __call__(self, reference):
         """
@@ -199,9 +199,12 @@ class VelocityMpcController():
             Gamma = get_Gamma(list_ext_A, list_ext_B, self.Nc, self.nz, self.nu)
             Z = getZ(list_ext_C,self.Nc,self.ny,self.nz)
 
-            G = 2*(Gamma.T @ (Z.T @ (self.Omega1 + self.Sy.T @ self.P @ self.Sy) @ Z + self.Omega2) @ Gamma + self.Psi)
-            F = 2*(Gamma.T @ (Z.T @ (self.Omega1 @ (Z @ Phi @ Z0[:self.nz] - r) + \
-                                     self.Sy.T @ self.P @ (self.Sy @ Z @ Phi @ Z0[:self.nz] - r[-self.ny:])) + self.Omega2 @ Phi @ Z0[:self.nz]))
+            G = 2*(Gamma.T @ (Z.T @ self.Omega1 @ Z + self.Sx.T @ self.Omega2 @ self.Sx) @ Gamma + self.Psi)
+            F = 2*(Gamma.T @ (Z.T @ self.Omega1 @ (Z @ Phi @ Z0[:self.nz] - r) + self.Sx.T @ self.Omega2 @ self.Sx @ Phi @ Z0[:self.nz]))
+
+            # G = 2*(Gamma.T @ (Z.T @ (self.Omega1 + self.Sy.T @ self.P @ self.Sy) @ Z + self.Omega2) @ Gamma + self.Psi)
+            # F = 2*(Gamma.T @ (Z.T @ (self.Omega1 @ (Z @ Phi @ Z0[:self.nz] - r) + \
+            #                          self.Sy.T @ self.P @ (self.Sy @ Z @ Phi @ Z0[:self.nz] - r[-self.ny:])) + self.Omega2 @ Phi @ Z0[:self.nz]))
 
             # describe inequality constraints
             L = (self.M @ Gamma + self.E @ self.Lambda)
@@ -213,18 +216,19 @@ class VelocityMpcController():
             Le = np.hstack((L, -np.ones((self.Nc*2*(self.nz+self.nu)+2*self.nz,self.ne))))
 
             # describe equality constraints
-            self.c_terminal = np.vstack((r[-self.ny:,:],np.zeros((self.nx,1))))
-            A = (self.E_terminal @ self.Sx) @ Gamma
-            b = self.c_terminal-(self.E_terminal @ self.Sx) @ Phi @ Z0[:self.nz]
+            # self.c_terminal = np.vstack((r[-self.ny:,:],np.zeros((self.nx,1))))
+            # A = (self.E_terminal @ self.Sx) @ Gamma
+            # b = self.c_terminal-(self.E_terminal @ self.Sx) @ Phi @ Z0[:self.nz]
             # add soft constraints
-            Ae = np.hstack((A,np.zeros((self.nz,1))))
+            # Ae = np.hstack((A,np.zeros((self.nz,1))))
 
             # solve QP problem
             solve_time_start = time.time()
 
+            # opt_result = qp.solve_qp(G,F,solver="osqp",initvals=np.hstack((dU0[:,0])))
             # opt_result = qp.solve_qp(self.Ge,Fe,solver="osqp",initvals=np.hstack((dU0[:,0],0)))
-            # opt_result = qp.solve_qp(self.Ge,Fe,Le,self.c+W,solver="osqp",initvals=np.hstack((dU0[:,0],0)))
-            opt_result = qp.solve_qp(P=self.Ge,q=Fe,G=Le,h=self.c+W,solver="osqp",initvals=np.hstack((dU0[:,0],0)))
+            opt_result = qp.solve_qp(self.Ge,Fe,Le,self.c+W,solver="osqp",initvals=np.hstack((dU0[:,0],0)))
+            # opt_result = qp.solve_qp(P=self.Ge,q=Fe,G=Le,h=self.c+W,solver="osqp",initvals=np.hstack((dU0[:,0],0)))
             # opt_result = qp.solve_qp(P=self.Ge,q=Fe,A=Ae,b=b,solver="osqp",initvals=np.hstack((dU0[:,0],0)))
             # opt_result = qp.solve_qp(P=self.Ge,q=Fe,G=Le,h=(self.c+W)[:,0],A=Ae,b=b[:,0],solver="osqp",initvals=np.hstack((dU0[:,0],0)))
 
@@ -282,7 +286,7 @@ class VelocityMpcController():
             self.log_comp_t[self.sim_step] = self.log_comp_t[self.sim_step] + time.time() - comp_time_start
 
             # stopping condition
-            if np.linalg.norm(self.U_1 - U_1_old) < 1e-1:
+            if np.linalg.norm(self.U_1 - U_1_old) < 1e-5:
                 break
 
         self.log_iterations[self.sim_step] = iteration
@@ -351,5 +355,57 @@ class VelocityMpcController():
         return
     
     def computationTimeLogging(self):
-        return np.max(self.log_comp_t)*1000, np.mean(self.log_comp_t)*1000, \
-            np.std(self.log_comp_t)*1000, np.mean(self.log_solv_t)*1000, np.mean(self.log_fact_t)*1000
+        return np.max(self.log_comp_t)*1000, np.median(self.log_comp_t)*1000, \
+            np.std(self.log_comp_t)*1000, np.median(self.log_solv_t)*1000, np.median(self.log_fact_t)*1000
+    
+def controlLoop(reference_theta, system, model, Nc, nr_sim_steps, nu, ny, Q1, Q2, R, P, qlim, wlim, max_iter, n_stages, numerical_method, model_simulation):
+    system.reset_state()
+    log_q = np.zeros((ny,nr_sim_steps))
+    log_w = np.zeros((nu,nr_sim_steps))
+
+    controller = VelocityMpcController(system, model, Nc, Q1, Q2, R, P, qlim, wlim, nr_sim_steps=nr_sim_steps, \
+                                        max_iter=max_iter, n_stages=n_stages, numerical_method=numerical_method, model_simulation=model_simulation)
+
+    sim_start_time = time.time()
+
+    for k in range(nr_sim_steps):
+        w0 = controller.QP_solve(reference_theta[k:k+Nc])
+        system.x = system.f(system.x, w0[0])
+        omega1, theta1 = system.h(system.x, w0[0])
+        q1 = theta1; x1 = np.vstack((omega1, theta1))
+        controller.update(q1, w0, x1)
+
+        log_q[:,k] = q1
+        log_w[:,k] = w0
+
+    sim_end_time = time.time()
+    print("Sim duration: " + str(sim_end_time - sim_start_time))
+    print("Time breakdown: " + str(controller.computationTimeLogging()))
+
+    return log_w, log_q
+
+def controlLoopTime(reference_theta, system, model, Nc, nr_sim_steps, nu, ny, Q1, Q2, R, P, qlim, wlim, max_iter, n_stages, numerical_method, model_simulation):
+    system.reset_state()
+    log_q = np.zeros((ny,nr_sim_steps))
+    log_w = np.zeros((nu,nr_sim_steps))
+
+    controller = VelocityMpcController(system, model, Nc, Q1, Q2, R, P, qlim, wlim, nr_sim_steps=nr_sim_steps, \
+                                        max_iter=max_iter, n_stages=n_stages, numerical_method=numerical_method, model_simulation=model_simulation)
+
+    sim_start_time = time.time()
+
+    for k in range(nr_sim_steps):
+        w0 = controller.QP_solve(reference_theta[k:k+Nc])
+        system.x = system.f(system.x, w0[0])
+        omega1, theta1 = system.h(system.x, w0[0])
+        q1 = theta1; x1 = np.vstack((omega1, theta1))
+        controller.update(q1, w0, x1)
+
+        log_q[:,k] = q1
+        log_w[:,k] = w0
+
+    sim_end_time = time.time()
+    print("Sim duration: " + str(sim_end_time - sim_start_time))
+    print("Time breakdown: " + str(controller.computationTimeLogging()))
+
+    return log_w, log_q, controller.log_comp_t
