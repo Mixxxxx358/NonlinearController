@@ -214,19 +214,6 @@ class CasADi_velocity_lpv_embedder():
 
         self.Nc = Nc
 
-        # f_ode = odeCasADiUnbalancedDisc()
-        # f_ode = odeCasADiMassSpringDamper()
-
-        # expr_rk4, x0_cas, u0_cas = RK4(f_ode, dt=0.1)
-
-        # change these expressions for sincos
-        # f_rk4 = Function('f_rk4', [x0_cas, u0_cas], [expr_rk4])
-
-        # expr_output = vertcat(sin(x0_cas[1]), cos(x0_cas[1]))
-        # expr_output = vertcat(x0_cas[1])
-        # h_sincos = Function('h_sincos', [x0_cas], [expr_sincos])
-        
-
         self.lpv_A, self.lpv_B, self.lpv_C = CasADi_velocity_lpv_embedding(model.expr_rk4, model.expr_output, model.x_cas, model.u_cas, self.ny, n_stages=n_stages, numerical_method=numerical_method)
         self.lpv_A_Nc = self.lpv_A.map(self.Nc, "thread", 32)
         self.lpv_B_Nc = self.lpv_B.map(self.Nc, "thread", 32)
@@ -263,7 +250,7 @@ class CasADi_velocity_lpv_embedder():
 
         return list_A, list_B, list_C
 
-def velocity_lpv_embedding(model, n_stages=20):
+def velocity_lpv_embedding(model, n_stages=20, numerical_method=1):
     '''Takes veocity ss encoder model and outputs velocity lpv embedded CasADi functions for A,B,C'''
     # declared sym variables
     nx = model.nx
@@ -287,7 +274,21 @@ def velocity_lpv_embedding(model, n_stages=20):
     du = MX.sym("du",nu,1)
     u0 = MX.sym("u0",nu,1)
 
-    [A_sym, B_sym, C_sym] = velocity_lambda_trap(x0,dx,u0,du,nx,nu,ny,Jfx,Jfu,Jhx,n_stages)
+    if numerical_method == 1:
+        print("Rectangular method")
+        [A_sym, B_sym, C_sym] = velocity_lambda_rect(x0,dx,u0,du,nx,nu,ny,Jfx,Jfu,Jhx,n_stages)
+    elif numerical_method == 2:
+        print("Trapezian method")
+        [A_sym, B_sym, C_sym] = velocity_lambda_trap(x0,dx,u0,du,nx,nu,ny,Jfx,Jfu,Jhx,n_stages)
+    elif numerical_method == 3:
+        print("Simpson method")
+        [A_sym, B_sym, C_sym] = velocity_lambda_simpsons(x0,dx,u0,du,nx,nu,ny,Jfx,Jfu,Jhx,n_stages)
+    elif numerical_method == 4:
+        print("MMVT method")
+        [A_sym, B_sym, C_sym] = velocity_lambda_MMVT(x0,dx,u0,du,nx,nu,ny,Jfx,Jfu,Jhx,n_stages)
+    else:
+        print("Numerical method not recognised.")
+    
     lpv_A = Function("get_A",[x0,dx,u0,du],[A_sym])
     lpv_B = Function("get_B",[x0,dx,u0,du],[B_sym])
     lpv_C = Function("get_C",[x0,dx,u0,du],[C_sym])
@@ -295,27 +296,30 @@ def velocity_lpv_embedding(model, n_stages=20):
     return lpv_A, lpv_B, lpv_C
 
 class velocity_lpv_embedder():
-    def __init__(self, ss_enc, Nc, n_stages=20):
+    def __init__(self, ss_enc, Nc, n_stages=20, numerical_method=1):
         self.nx = ss_enc.nx
         self.nu = ss_enc.nu if ss_enc.nu is not None else 1
         self.ny = ss_enc.ny if ss_enc.ny is not None else 1
 
         self.Nc = Nc
 
-        self.lpv_A, self.lpv_B, self.lpv_C = velocity_lpv_embedding(ss_enc,n_stages=n_stages)
+        self.lpv_A, self.lpv_B, self.lpv_C = velocity_lpv_embedding(ss_enc,n_stages=n_stages, numerical_method=numerical_method)
         self.lpv_A_Nc = self.lpv_A.map(self.Nc, "thread", 32)
         self.lpv_B_Nc = self.lpv_B.map(self.Nc, "thread", 32)
         self.lpv_C_Nc = self.lpv_C.map(self.Nc, "thread", 32)
 
     def __call__(self, X, U):
-        X_1 = np.hstack(np.split(X[:-self.nx],self.Nc))
-        dX0 = np.hstack(np.split(X[self.nx:] - X[:-self.nx],self.Nc))
+        X_1 = np.hstack(np.split(X[:-2*self.nx],self.Nc))
+        dX0 = np.hstack(np.split(X[self.nx:-self.nx] - X[:-2*self.nx],self.Nc))
         U_1 = np.hstack(np.split(U[:-self.nu],self.Nc))
         dU0 = np.hstack(np.split(U[self.nu:] - U[:-self.nu],self.Nc))
         
         pA = self.lpv_A_Nc(X_1, dX0, U_1, dU0)
         pB = self.lpv_B_Nc(X_1, dX0, U_1, dU0)
-        pC = self.lpv_C_Nc(X_1, dX0, U_1, dU0)
+
+        X0 = np.hstack(np.split(X[self.nx:-self.nx],self.Nc))
+        dX1 = np.hstack(np.split(X[2*self.nx:] - X[self.nx:-self.nx],self.Nc))
+        pC = self.lpv_C_Nc(X0, dX1, U_1, dU0)
 
         return self.reshapeEmbedding(pA, pB, pC)
 
@@ -336,13 +340,14 @@ class velocity_lpv_embedder():
         return list_A, list_B, list_C
     
 class velocity_lpv_embedder_autograd():
-    def __init__(self, ss_enc, Nc, n_stages=20, numerical_method=3):
-        if torch.cuda.is_available(): 
-            dev = "gpu" 
-        else: 
-            dev = "cpu" 
-        self.device = torch.device(dev) 
-        print("Using " + str(dev))
+    def __init__(self, ss_enc, Nc, n_stages=20, numerical_method=3, dev=None):
+        if dev == None:
+            if torch.cuda.is_available(): 
+                dev = "cuda" 
+            else: 
+                dev = "cpu" 
+            self.device = torch.device(dev) 
+            print("Using " + str(dev))
 
         self.nx = ss_enc.nx
         self.nu = ss_enc.nu if ss_enc.nu is not None else 1
