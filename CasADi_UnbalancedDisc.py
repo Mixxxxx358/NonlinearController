@@ -30,17 +30,14 @@ R = np.eye(nu)*0.01
 P = np.eye(ny)*0
 
 ##################  Reference  #######################
-# reference_theta = np.hstack((np.zeros(10),np.ones(90)*2.7))
-# a = 3.3; reference_theta = np.hstack((np.zeros(10), np.ones(20)*a,np.ones(20)*-a,np.ones(20)*a/2,np.ones(20)*-a/2,np.ones(40)*0))
-# reference_theta = np.ones(nr_sim_steps+Nc)*1.7
-# reference_theta = np.hstack((np.ones(50)*2.7, np.ones(200)*3.1))
+a = 3.1; reference_theta = np.hstack((np.ones(20)*a,np.ones(20)*-a,np.ones(20)*a/2,np.ones(20)*-a/2,np.ones(40)*0))
 # a=3.1; reference_theta = []
 # for i in range(20):
 #     reference_theta = np.hstack((reference_theta, np.ones(5)*a/20*i))
 # reference_theta = np.hstack((reference_theta, np.ones(80)*a))
 reference_theta = np.load("references/multisine.npy")
 
-# reference_theta = randomLevelReference(nr_sim_steps+Nc,[5,10],[-3.1,3.1])
+# reference_theta = randomLevelReference(nr_sim_steps+Nc,[10,15],[-3.1,3.1])
 # reference_theta = np.load("NonlinearController/references/setPoints.npy")
 # reference_theta = deepSI.deepSI.exp_design.multisine(nr_sim_steps+Nc+20, pmax=17, n_crest_factor_optim=10)*1.7
 # np.save("NonlinearController/references/multisine.npy", reference_theta)
@@ -101,7 +98,7 @@ log_q_3 = np.zeros((ny,nr_sim_steps))
 log_w_3 = np.zeros((nu,nr_sim_steps))
 
 controller_3 = VelocityMpcController(system, model, Nc, Q1, Q2, R, P, qlim, wlim, nr_sim_steps=nr_sim_steps, \
-                                     max_iter=1, n_stages=1, numerical_method=2, model_simulation="LPV")
+                                     max_iter=max_iter, n_stages=1, numerical_method=2, model_simulation="LPV")
 
 sim_start_time = time.time()
 
@@ -125,12 +122,12 @@ log_q_4 = np.zeros((ny,nr_sim_steps))
 log_w_4 = np.zeros((nu,nr_sim_steps))
 
 controller_4 = VelocityMpcController(system, model, Nc, Q1, Q2, R, P, qlim, wlim, nr_sim_steps=nr_sim_steps, \
-                                     max_iter=1, n_stages=1, numerical_method=3, model_simulation="LPV")
+                                     max_iter=max_iter, n_stages=1, numerical_method=3, model_simulation="LPV")
 
 sim_start_time = time.time()
 
 for k in range(nr_sim_steps):
-    w0 = controller_4.QP_solve(reference_theta[k:Nc+k])
+    w0 = controller_4.QP_solve(reference_theta[k:k+Nc])
     system.x = system.f(system.x, w0[0])
     omega1, theta1 = system.h(system.x, w0[0])
     q1 = theta1; x1 = np.vstack((omega1, theta1))
@@ -161,7 +158,7 @@ print("Time breakdown: " + str(controller_3.computationTimeLogging()))
 fig1 = plt.figure(figsize=[8.9, 8])
 
 plt.subplot(2,1,1)
-plt.plot(np.arange(nr_sim_steps)*dt, log_w_1[0,:], label='Right rectangular')
+plt.plot(np.arange(nr_sim_steps)*dt, log_w_1[0,:], label='MMVT')
 plt.plot(np.arange(nr_sim_steps)*dt, log_w_2[0,:], label='Midpoint')
 plt.plot(np.arange(nr_sim_steps)*dt, log_w_3[0,:], label='Trapezoidal')
 plt.plot(np.arange(nr_sim_steps)*dt, log_w_4[0,:], label='Simpsons')
@@ -177,7 +174,7 @@ plt.grid()
 plt.legend(loc='lower right')
 
 plt.subplot(2,1,2)
-plt.plot(np.arange(nr_sim_steps)*dt, log_q_1[0,:], label='Right rectangular')
+plt.plot(np.arange(nr_sim_steps)*dt, log_q_1[0,:], label='MMVT')
 plt.plot(np.arange(nr_sim_steps)*dt, log_q_2[0,:], label='Midpoint')
 plt.plot(np.arange(nr_sim_steps)*dt, log_q_3[0,:], label='Trapezoidal')
 plt.plot(np.arange(nr_sim_steps)*dt, log_q_4[0,:], label='Simpsons')
@@ -193,7 +190,7 @@ plt.ylabel("angle theta [rad]")
 plt.grid()
 plt.legend(loc='lower right')
 
-# plt.savefig("Figures/CasADi_model_levels_methods.svg")
+plt.savefig("Figures/CasADi_model_levels_methods.svg")
 # plt.savefig("Figures/CasADi_model_levels_controllers.svg")
 plt.savefig("Figures/CasADi_model_sinus_methods.svg")
 # plt.savefig("Figures/CasADi_model_sinus_controllers.svg")
