@@ -97,6 +97,8 @@ class VelocityMpcController():
         self.log_comp_t = np.zeros(self.nr_sim_steps)
         self.log_iterations = np.zeros(self.nr_sim_steps)
 
+        self.log_iter_y = np.zeros((self.nr_sim_steps, self.max_iter, self.Nc*self.ny))
+
     def Offline_QP(self):
         """
         Initiates the variables and objects required for the QP solving online.
@@ -296,8 +298,13 @@ class VelocityMpcController():
 
             self.log_comp_t[self.sim_step] = self.log_comp_t[self.sim_step] + time.time() - comp_time_start
 
+            # log iteration states and output
+            # print(self.Y_1.shape)
+            self.log_iter_y[self.sim_step, iteration, :] = Y0[:,0].copy()
+            # print(self.X_1.shape)
+
             # stopping condition
-            if np.linalg.norm(self.U_1 - U_1_old) < 1e-5:
+            if np.linalg.norm(self.U_1 - U_1_old) < 1e-20:
                 break
 
         self.log_iterations[self.sim_step] = iteration
@@ -366,21 +373,24 @@ class VelocityMpcController():
         return
     
     def computationTimeLogging(self):
-        return np.max(self.log_comp_t)*1000, np.median(self.log_comp_t)*1000, \
-            np.std(self.log_comp_t)*1000, np.median(self.log_solv_t)*1000, np.median(self.log_fact_t)*1000
+        return np.max(self.log_comp_t)*1000, np.mean(self.log_comp_t)*1000, \
+            np.std(self.log_comp_t)*1000, np.mean(self.log_solv_t)*1000, np.mean(self.log_fact_t)*1000
     
-def controlLoop(reference_theta, system, model, Nc, nr_sim_steps, nu, ny, Q1, Q2, R, P, qlim, wlim, max_iter, n_stages, numerical_method, model_simulation):
+def controlLoop(reference_theta, system, model, Nc, nr_sim_steps, nu, ny, Q1, Q2, R, P, qlim, wlim, max_iter, n_stages, numerical_method, model_simulation, dev=None, factorization_method=None, future_reference=True):
     system.reset_state()
     log_q = np.zeros((ny,nr_sim_steps))
     log_w = np.zeros((nu,nr_sim_steps))
 
     controller = VelocityMpcController(system, model, Nc, Q1, Q2, R, P, qlim, wlim, nr_sim_steps=nr_sim_steps, \
-                                        max_iter=max_iter, n_stages=n_stages, numerical_method=numerical_method, model_simulation=model_simulation)
+                                        max_iter=max_iter, n_stages=n_stages, numerical_method=numerical_method, model_simulation=model_simulation, dev=dev, factorization_method=factorization_method)
 
     sim_start_time = time.time()
 
     for k in range(nr_sim_steps):
-        w0 = controller.QP_solve(reference_theta[k:k+Nc])
+        if future_reference:
+            w0 = controller.QP_solve(reference_theta[k:k+Nc])
+        else:
+            w0 = controller.QP_solve(reference_theta[k])
         system.x = system.f(system.x, w0[0])
         omega1, theta1 = system.h(system.x, w0[0])
         q1 = theta1; x1 = np.vstack((omega1, theta1))
@@ -395,18 +405,21 @@ def controlLoop(reference_theta, system, model, Nc, nr_sim_steps, nu, ny, Q1, Q2
 
     return log_w, log_q
 
-def controlLoopTime(reference_theta, system, model, Nc, nr_sim_steps, nu, ny, Q1, Q2, R, P, qlim, wlim, max_iter, n_stages, numerical_method, model_simulation):
+def controlLoopTime(reference_theta, system, model, Nc, nr_sim_steps, nu, ny, Q1, Q2, R, P, qlim, wlim, max_iter, n_stages, numerical_method, model_simulation, dev=None, factorization_method=None, future_reference=True):
     system.reset_state()
     log_q = np.zeros((ny,nr_sim_steps))
     log_w = np.zeros((nu,nr_sim_steps))
 
     controller = VelocityMpcController(system, model, Nc, Q1, Q2, R, P, qlim, wlim, nr_sim_steps=nr_sim_steps, \
-                                        max_iter=max_iter, n_stages=n_stages, numerical_method=numerical_method, model_simulation=model_simulation)
+                                        max_iter=max_iter, n_stages=n_stages, numerical_method=numerical_method, model_simulation=model_simulation, dev=dev, factorization_method=factorization_method)
 
     sim_start_time = time.time()
 
     for k in range(nr_sim_steps):
-        w0 = controller.QP_solve(reference_theta[k:k+Nc])
+        if future_reference:
+            w0 = controller.QP_solve(reference_theta[k:k+Nc])
+        else:
+            w0 = controller.QP_solve(reference_theta[k])
         system.x = system.f(system.x, w0[0])
         omega1, theta1 = system.h(system.x, w0[0])
         q1 = theta1; x1 = np.vstack((omega1, theta1))
