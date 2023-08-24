@@ -31,6 +31,7 @@ def get_Psi(Nc, R):
 
 def get_Omega(Nc, Q):
     '''Return kronecker product of Q and Identity of size Nc'''
+    # return np.kron(np.diag(np.arange(Nc,0,-1)),Q)
     return np.kron(np.eye(Nc), Q)
 
 def getZ(list_C, Nc, ny, nx): # Z is Lambda in the report
