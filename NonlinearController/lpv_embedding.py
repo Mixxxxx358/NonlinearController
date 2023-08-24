@@ -347,7 +347,9 @@ class velocity_lpv_embedder_autograd():
             else: 
                 dev = "cpu" 
             self.device = torch.device(dev) 
-            print("Using " + str(dev))
+        else:
+            self.device = torch.device(dev)
+        print("Using " + str(dev))
 
         self.nx = ss_enc.nx
         self.nu = ss_enc.nu if ss_enc.nu is not None else 1
@@ -422,19 +424,19 @@ class velocity_lpv_embedder_autograd():
         x_tens = torch.reshape(torch.tensor(Xlam[np.newaxis].T, device=self.device),(self.batch_size,1,self.nx)).float()
         fC = self.JacH(x_tens)
 
-        return self.reshapeEmbedding(fA, fB, fC)
+        return self.reshapeEmbedding(fA.detach(), fB.detach(), fC.detach())
 
     def reshapeEmbedding(self, fA,fB,fC):
         list_A = np.zeros([self.Nc*self.nx, self.nx])
         list_B = np.zeros([self.Nc*self.nx, self.nu])
         list_C = np.zeros([self.Nc*self.ny, self.nx])
 
-        tempA = torch.tensor_split(torch.mul(fA.view((self.batch_size,self.nx,self.nx)), self.mult_fA).detach(), self.Nc)
-        tempB = torch.tensor_split(torch.mul(fB.view((self.batch_size,self.nx,self.nu)), self.mult_fB).detach(), self.Nc)
-        tempC = torch.tensor_split(torch.mul(fC.view((self.batch_size,self.ny,self.nx)), self.mult_fC).detach(), self.Nc)
+        tempA = torch.tensor_split(torch.mul(fA.view((self.batch_size,self.nx,self.nx)), self.mult_fA).cpu(), self.Nc)
+        tempB = torch.tensor_split(torch.mul(fB.view((self.batch_size,self.nx,self.nu)), self.mult_fB).cpu(), self.Nc)
+        tempC = torch.tensor_split(torch.mul(fC.view((self.batch_size,self.ny,self.nx)), self.mult_fC).cpu(), self.Nc)
         for i in range(self.Nc):
-            list_A[self.nx*(i):self.nx*(i+1),:] = torch.sum(tempA[i], axis=0).cpu().numpy()
-            list_B[self.nx*(i):self.nx*(i+1),:] = torch.sum(tempB[i], axis=0).cpu().numpy()
-            list_C[self.ny*(i):self.ny*(i+1),:] = torch.sum(tempC[i], axis=0).cpu().numpy()
+            list_A[self.nx*(i):self.nx*(i+1),:] = torch.sum(tempA[i], axis=0).numpy()
+            list_B[self.nx*(i):self.nx*(i+1),:] = torch.sum(tempB[i], axis=0).numpy()
+            list_C[self.ny*(i):self.ny*(i+1),:] = torch.sum(tempC[i], axis=0).numpy()
 
         return list_A, list_B, list_C
