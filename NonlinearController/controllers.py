@@ -23,7 +23,7 @@ class VelocityMpcController():
         Returns optimal input for given reference and progresses controller by one step.
     """
 
-    def __init__(self, system, model, Nc, Q1, Q2, R, P, qlim, wlim, nr_sim_steps, max_iter=1, n_stages=1, numerical_method=1, model_simulation="LPV"):
+    def __init__(self, system, model, Nc, Q1, Q2, R, P, qlim, wlim, nr_sim_steps, max_iter=1, n_stages=1, numerical_method=1, model_simulation="LPV", dev=None, factorization_method=None):
         """
         Constructs all the necessary attributes for the person object.
 
@@ -54,6 +54,8 @@ class VelocityMpcController():
         self.ny = system.ny if system.ny is not None else 1
         self.ne = 1
 
+        self.dev = dev
+
         self.model = model
         if type(self.model) == CasADi_model:
             self.model_type = "CasADi"
@@ -61,6 +63,12 @@ class VelocityMpcController():
             self.model_type = "encoder"
         self.nx = model.nx
         self.nz = self.nx+self.ny
+
+        if factorization_method == None:
+            self.factorization_method = self.model_type
+        else:
+            self.factorization_method = factorization_method
+        print("Factorization method: " + self.factorization_method)
 
         self.model_simulation = model_simulation
 
@@ -104,7 +112,10 @@ class VelocityMpcController():
         self.Ge[-self.ne:,-self.ne:] = e_lambda
 
         if self.model_type == "encoder":
-            self.embedder = velocity_lpv_embedder_autograd(ss_enc=self.model, Nc=self.Nc, n_stages=self.n_stages, numerical_method=self.numerical_method)
+            if self.factorization_method == "encoder":
+                self.embedder = velocity_lpv_embedder_autograd(ss_enc=self.model, Nc=self.Nc, n_stages=self.n_stages, numerical_method=self.numerical_method, dev=self.dev)
+            elif self.factorization_method == "CasADi":
+                self.embedder = velocity_lpv_embedder(ss_enc=self.model, Nc=self.Nc, n_stages=self.n_stages, numerical_method=self.numerical_method)
         else:
             self.embedder = CasADi_velocity_lpv_embedder(model=self.model, Nc=self.Nc, n_stages=self.n_stages, numerical_method=self.numerical_method)
 

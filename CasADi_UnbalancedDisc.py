@@ -32,14 +32,14 @@ P = np.eye(ny)*0
 ##################  Reference  #######################
 a = 3.1; reference_theta = np.hstack((np.ones(20)*a,np.ones(20)*-a,np.ones(20)*a/2,np.ones(20)*-a/2,np.ones(40)*0))
 # a=3.1; reference_theta = []
-# for i in range(10):
-#     reference_theta = np.hstack((reference_theta, np.ones(10)*a/10*i))
+# for i in range(20):
+#     reference_theta = np.hstack((reference_theta, np.ones(5)*a/20*i))
 # reference_theta = np.hstack((reference_theta, np.ones(80)*a))
-# reference_theta = np.load("NonlinearController/references/multisine.npy")
+reference_theta = np.load("references/multisine.npy")
 
 # reference_theta = randomLevelReference(nr_sim_steps+Nc,[10,15],[-3.1,3.1])
 # reference_theta = np.load("NonlinearController/references/setPoints.npy")
-# reference_theta = deepSI.deepSI.exp_design.multisine(nr_sim_steps+Nc+20, pmax=10, n_crest_factor_optim=10)*1.4
+# reference_theta = deepSI.deepSI.exp_design.multisine(nr_sim_steps+Nc+20, pmax=17, n_crest_factor_optim=10)*1.7
 # np.save("NonlinearController/references/multisine.npy", reference_theta)
 # reference_theta = np.sin(np.arange(0,nr_sim_steps+Nc)/np.pi*1.0)*3.1
 reference = reference_theta[np.newaxis]
@@ -50,12 +50,12 @@ log_q_1 = np.zeros((ny,nr_sim_steps))
 log_w_1 = np.zeros((nu,nr_sim_steps))
 
 controller_1 = VelocityMpcController(system, model, Nc, Q1, Q2, R, P, qlim, wlim, nr_sim_steps=nr_sim_steps, \
-                                     max_iter=max_iter, n_stages=1, numerical_method=4, model_simulation="LPV")
+                                     max_iter=1, n_stages=1, numerical_method=4, model_simulation="LPV")
 
 sim_start_time = time.time()
 
 for k in range(nr_sim_steps):
-    w0 = controller_1.QP_solve(reference_theta[k:k+Nc])
+    w0 = controller_1.QP_solve(reference_theta[k:Nc+k])
     system.x = system.f(system.x, w0[0])
     omega1, theta1 = system.h(system.x, w0[0])
     q1 = theta1; x1 = np.vstack((omega1, theta1))
@@ -74,12 +74,12 @@ log_q_2 = np.zeros((ny,nr_sim_steps))
 log_w_2 = np.zeros((nu,nr_sim_steps))
 
 controller_2 = VelocityMpcController(system, model, Nc, Q1, Q2, R, P, qlim, wlim, nr_sim_steps=nr_sim_steps, \
-                                     max_iter=max_iter, n_stages=1, numerical_method=1, model_simulation="LPV")
+                                     max_iter=1, n_stages=1, numerical_method=1, model_simulation="LPV")
 
 sim_start_time = time.time()
 
 for k in range(nr_sim_steps):
-    w0 = controller_2.QP_solve(reference_theta[k:k+Nc])
+    w0 = controller_2.QP_solve(reference_theta[k:Nc+k])
     system.x = system.f(system.x, w0[0])
     omega1, theta1 = system.h(system.x, w0[0])
     q1 = theta1; x1 = np.vstack((omega1, theta1))
@@ -103,7 +103,7 @@ controller_3 = VelocityMpcController(system, model, Nc, Q1, Q2, R, P, qlim, wlim
 sim_start_time = time.time()
 
 for k in range(nr_sim_steps):
-    w0 = controller_3.QP_solve(reference_theta[k:k+Nc])
+    w0 = controller_3.QP_solve(reference_theta[k:Nc+k])
     system.x = system.f(system.x, w0[0])
     omega1, theta1 = system.h(system.x, w0[0])
     q1 = theta1; x1 = np.vstack((omega1, theta1))
@@ -142,17 +142,17 @@ print("Time breakdown: " + str(controller_3.computationTimeLogging()))
 
 ##################  Plots  #######################
 # load other experiments for comparison
-ud_sqp_levels_u = np.load("NonlinearController/experiments/ud_sqp_levels_u.npy")
-ud_sqp_levels_q = np.load("NonlinearController/experiments/ud_sqp_levels_q.npy")
+# ud_sqp_levels_u = np.load("NonlinearController/experiments/ud_sqp_levels_u.npy")
+# ud_sqp_levels_q = np.load("NonlinearController/experiments/ud_sqp_levels_q.npy")
 
-ud_nmpc_levels_u = np.load("NonlinearController/experiments/ud_nmpc_levels_u.npy")
-ud_nmpc_levels_q = np.load("NonlinearController/experiments/ud_nmpc_levels_q.npy")
+# ud_nmpc_levels_u = np.load("NonlinearController/experiments/ud_nmpc_levels_u.npy")
+# ud_nmpc_levels_q = np.load("NonlinearController/experiments/ud_nmpc_levels_q.npy")
 
-ud_sqp_sinus_u = np.load("NonlinearController/experiments/ud_sqp_sinus_u.npy")
-ud_sqp_sinus_q = np.load("NonlinearController/experiments/ud_sqp_sinus_q.npy")
+# ud_sqp_sinus_u = np.load("NonlinearController/experiments/ud_sqp_sinus_u.npy")
+# ud_sqp_sinus_q = np.load("NonlinearController/experiments/ud_sqp_sinus_q.npy")
 
-ud_nmpc_sinus_u = np.load("NonlinearController/experiments/ud_nmpc_sinus_u.npy")
-ud_nmpc_sinus_q = np.load("NonlinearController/experiments/ud_nmpc_sinus_q.npy")
+# ud_nmpc_sinus_u = np.load("NonlinearController/experiments/ud_nmpc_sinus_u.npy")
+# ud_nmpc_sinus_q = np.load("NonlinearController/experiments/ud_nmpc_sinus_q.npy")
 
 
 fig1 = plt.figure(figsize=[8.9, 8])
@@ -192,18 +192,18 @@ plt.legend(loc='lower right')
 
 plt.savefig("Figures/CasADi_model_levels_methods.svg")
 # plt.savefig("Figures/CasADi_model_levels_controllers.svg")
-# plt.savefig("Figures/CasADi_model_sinus_methods.svg")
+plt.savefig("Figures/CasADi_model_sinus_methods.svg")
 # plt.savefig("Figures/CasADi_model_sinus_controllers.svg")
 
 plt.show()
 
 # Q_DR = np.ones(1)
-ipopt_diff = (ud_nmpc_sinus_q[1,:] - reference[0,:nr_sim_steps]); DR_ipopt = ipopt_diff.T @ ipopt_diff
-sqp_diff = (ud_sqp_sinus_q[:-1,1] - reference[0,:nr_sim_steps]); DR_sqp = sqp_diff.T @ sqp_diff
-simpsons_diff = (log_q_3[0,:] - reference[0,:nr_sim_steps]); DR_simpsons = simpsons_diff.T @ simpsons_diff
+# ipopt_diff = (ud_nmpc_sinus_q[1,:] - reference[0,:nr_sim_steps]); DR_ipopt = ipopt_diff.T @ ipopt_diff
+# sqp_diff = (ud_sqp_sinus_q[:-1,1] - reference[0,:nr_sim_steps]); DR_sqp = sqp_diff.T @ sqp_diff
+# simpsons_diff = (log_q_3[0,:] - reference[0,:nr_sim_steps]); DR_simpsons = simpsons_diff.T @ simpsons_diff
 
-RCSO_sqp = (DR_sqp - DR_ipopt)/DR_ipopt
-RCSO_simpsons = (DR_simpsons - DR_ipopt)/DR_ipopt
+# RCSO_sqp = (DR_sqp - DR_ipopt)/DR_ipopt
+# RCSO_simpsons = (DR_simpsons - DR_ipopt)/DR_ipopt
 
-# print([DR_ipopt, DR_sqp, DR_simpsons])
-print([RCSO_sqp, RCSO_simpsons])
+# # print([DR_ipopt, DR_sqp, DR_simpsons])
+# print([RCSO_sqp, RCSO_simpsons])

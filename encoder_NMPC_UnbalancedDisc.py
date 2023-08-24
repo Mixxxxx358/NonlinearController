@@ -38,18 +38,22 @@ system = UnbalancedDisc(dt=dt)
 system.reset_state()
 
 ##################  MPC variable specification  #######################
-model = deepSI.load_system("NonlinearController/trained_models/unbalanced/ud_test_4")
-Nc=10; nr_sim_steps = 450
+model = deepSI.load_system("NonlinearController/trained_models/unbalanced/ObserverUnbalancedDisk_dt01_nab_4_SNR_30_e250")
+# model = deepSI.load_system("NonlinearController/trained_models/unbalanced/ud_test_4")
+Nc=5; nr_sim_steps = 100
 
 Q = 100; R = 1
 
-w_min = -5.0; w_max = 5.0
+w_min = -4.0; w_max = 4.0
 q_min = [-1.2]; q_max = [1.2]
 w0 = 0; q0 = 0
 
+a = 0.9; reference = np.hstack((np.ones(20)*a,np.ones(20)*-a,np.ones(20)*a/2,np.ones(20)*-a/2,np.ones(40)*0))
+reference = np.load("references/multisine.npy")
+
 # reference = randomLevelReference(nr_sim_steps+Nc, [25,30], [-1,1])
 # reference = deepSI.deepSI.exp_design.multisine(nr_sim_steps+Nc+1, pmax=20, n_crest_factor_optim=20)/2.0
-reference = np.load("NonlinearController/references/setPoints.npy")
+# reference = np.load("NonlinearController/references/setPoints.npy")
 # reference = np.sin(np.arange(0,nr_sim_steps+Nc)/np.pi*3.5)*1
 # x_reference_list = 1*np.load("NonlinearController/references/randomLevelTime25_30Range-1_1Nsim500.npy")
 # reference = x_reference_list[1,:]
@@ -227,5 +231,11 @@ for i in range(remove_start,nr_sim_steps):
 
 Sorted = np.sort(T_iter)
 # np.max(T_iter)*1000, np.mean(Sorted[int(nr_sim_steps*0.95):])*1000, np.mean(T_iter)*1000, np.std(T_iter)*1000, np.mean(S_iter)*1000 #in ms
-Times = [np.max(T_iter)*1000,  np.median(T_iter)*1000, np.std(T_iter)*1000, np.median(S_iter)*1000] #in ms
+Times = [np.max(T_iter)*1000,  np.mean(T_iter)*1000, np.std(T_iter)*1000, np.mean(S_iter)*1000] #in ms
 print(Times)
+
+# np.save("experiments/ud_nmpc_encoder_levels_u.npy", log_w)
+# np.save("experiments/ud_nmpc_encoder_levels_q.npy", log_q)
+
+np.save("experiments/ud_nmpc_encoder_sinus_u.npy", log_w)
+np.save("experiments/ud_nmpc_encoder_sinus_q.npy", log_q)
