@@ -98,6 +98,7 @@ class VelocityMpcController():
         self.log_iterations = np.zeros(self.nr_sim_steps)
 
         self.log_iter_y = np.zeros((self.nr_sim_steps, self.max_iter, self.Nc*self.ny))
+        self.log_iter_u = np.zeros((self.nr_sim_steps, self.max_iter, self.Nc*self.nu))
 
     def Offline_QP(self):
         """
@@ -301,10 +302,11 @@ class VelocityMpcController():
             # log iteration states and output
             # print(self.Y_1.shape)
             self.log_iter_y[self.sim_step, iteration, :] = Y0[:,0].copy()
+            self.log_iter_u[self.sim_step, iteration, :] = self.U_1[1:,0].copy()
             # print(self.X_1.shape)
 
             # stopping condition
-            if np.linalg.norm(self.U_1 - U_1_old) < 1e-20:
+            if np.linalg.norm(self.U_1 - U_1_old) < 1e-1:
                 break
 
         self.log_iterations[self.sim_step] = iteration
