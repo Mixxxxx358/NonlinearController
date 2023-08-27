@@ -41,7 +41,7 @@ a = 3.1; reference_theta = np.hstack((np.ones(20)*a,np.ones(20)*-a,np.ones(20)*a
 reference = reference_theta[np.newaxis]
 
 ##################  Control Loop MVT  #######################
-steps = np.arange(1,15,1)
+steps = np.arange(1,10,1)
 log_w_inf, log_q_inf = controlLoop(reference_theta, system, model, Nc, nr_sim_steps, nu, ny, Q1, Q2, R, P, qlim, wlim, max_iter, 200, 3, "LPV")
 inf_diff = (log_q_inf[0,:] - reference[0,:nr_sim_steps]); DR_inf = inf_diff.T @ inf_diff
 
@@ -79,12 +79,13 @@ for i in range(len(steps)):
 
 
 ##################  Plots  #######################
-fig1 = plt.figure(figsize=[8.9, 8])
+scaling = 6/10
+fig1 = plt.figure(figsize=[8.9*scaling, 8*scaling])
 plt.plot(diff_MMVT, label="MMVT")
 plt.plot(diff_Mid, label="Midpoint")
-plt.plot(diff_Trap, label="Trapezian")
+plt.plot(diff_Trap, label="Trapezoidal")
 plt.plot(diff_Simps, label="Simpsons")
-plt.xlabel("integration steps")
+plt.xlabel("nr integration steps")
 plt.ylabel("RCSO")
 plt.legend()
 plt.grid()

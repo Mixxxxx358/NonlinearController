@@ -19,18 +19,18 @@ ode = odeCasADiUnbalancedDisc()
 model = CasADi_model(ode, (1), dt, nx=2, nu=nu)
 
 ##################  MPC controller parameters  #######################
-Nc=10; max_iter = 8; nr_sim_steps = 20
-wlim = 8
+Nc=10; max_iter = 5; nr_sim_steps = 20
+wlim = 5
 qlim = 1000
 nx = 2; nz = nx+ny; ne = 1
 
-Q1 = np.zeros((ny,ny)); np.fill_diagonal(Q1, [1e1])
+Q1 = np.zeros((ny,ny)); np.fill_diagonal(Q1, [1e3])
 Q2 = np.zeros((nz,nz)); Q2[ny:,ny:] = np.eye(nx)*1
-R = np.eye(nu)*1
+R = np.eye(nu)*0.1
 P = np.eye(ny)*0
 
 ##################  Reference  #######################
-reference_theta = np.ones(nr_sim_steps+Nc)*3.1
+reference_theta = np.ones(nr_sim_steps+Nc)*2.7
 reference = reference_theta[np.newaxis]
 
 ##################  Control Loop MVT  #######################
@@ -39,10 +39,10 @@ log_q_1 = np.zeros((ny,nr_sim_steps))
 log_w_1 = np.zeros((nu,nr_sim_steps))
 
 controller_1 = VelocityMpcController(system, model, Nc, Q1, Q2, R, P, qlim, wlim, nr_sim_steps=nr_sim_steps, \
-                                     max_iter=max_iter, n_stages=10, numerical_method=3, model_simulation="LPV")
+                                     max_iter=max_iter, n_stages=1, numerical_method=1, model_simulation="LPV")
 
 for k in range(nr_sim_steps):
-    w0 = controller_1.QP_solve(reference_theta[k:k+Nc])
+    w0 = controller_1.QP_solve(reference_theta[k])
     system.x = system.f(system.x, w0[0])
     omega1, theta1 = system.h(system.x, w0[0])
     q1 = theta1; x1 = np.vstack((omega1, theta1))
@@ -63,12 +63,18 @@ plt.grid()
 plt.legend(loc='lower right')
 plt.show()
 
-fig1 = plt.figure(figsize=[8.9, 8])
-for j in range(12):
-    plt.subplot(2,6,j+1)
+scaling = 6/10
+fig1 = plt.figure(figsize=[8.9*scaling, 8*scaling])
+for j in range(6):
+    plt.subplot(2,3,j+1)
     for i in range(max_iter):
         plt.plot(log_iter_y[j,i,:], label=str(i))
     plt.plot(reference_theta[:Nc], 'k-.', label='reference')
     plt.grid()
     plt.legend()
+    plt.title("sim step " + str(j+1))
+    if j >= 3:
+        plt.xlabel("time [s]")
+    plt.ylabel("angle theta [rad]")
+    plt.ylim([-2.5,3.0])
 plt.show()
