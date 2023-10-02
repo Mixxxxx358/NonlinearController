@@ -35,7 +35,7 @@ a = 3.1; reference_theta = np.hstack((np.ones(20)*a,np.ones(20)*-a,np.ones(20)*a
 # for i in range(20):
 #     reference_theta = np.hstack((reference_theta, np.ones(5)*a/20*i))
 # reference_theta = np.hstack((reference_theta, np.ones(80)*a))
-reference_theta = np.load("references/multisine.npy")
+# reference_theta = np.load("references/multisine.npy")
 
 # reference_theta = randomLevelReference(nr_sim_steps+Nc,[10,15],[-3.1,3.1])
 # reference_theta = np.load("NonlinearController/references/setPoints.npy")
@@ -157,7 +157,7 @@ ud_nmpc_sinus_q = np.load("NonlinearController/experiments/ud_nmpc_sinus_q.npy")
 
 # fig1 = plt.figure(figsize=[8.9, 8])
 scaling = 6/10
-fig1 = plt.figure(figsize=[8.9*scaling, 8*scaling])
+fig1 = plt.figure(figsize=[8.9*scaling, 7*scaling])
 
 plt.subplot(2,1,1)
 # plt.plot(np.arange(nr_sim_steps)*dt, log_w_1[0,:], label='MMVT')
