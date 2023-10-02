@@ -100,6 +100,9 @@ class VelocityMpcController():
         self.log_iter_y = np.zeros((self.nr_sim_steps, self.max_iter, self.Nc*self.ny))
         self.log_iter_u = np.zeros((self.nr_sim_steps, self.max_iter, self.Nc*self.nu))
 
+        self.log_weight = np.zeros((self.nr_sim_steps, self.max_iter))
+        self.log_weight_old = np.zeros((self.nr_sim_steps, self.max_iter))
+
     def Offline_QP(self):
         """
         Initiates the variables and objects required for the QP solving online.
@@ -236,12 +239,15 @@ class VelocityMpcController():
             # add soft constraints
             # Ae = np.hstack((A,np.zeros((self.nz,1))))
 
+            # log old weight solution over iter and time
+            self.log_weight_old[self.sim_step, iteration] = (1/2*dU0.T @ G @ dU0 + F.T @ dU0)
+
             # solve QP problem
             solve_time_start = time.time()
 
-            # opt_result = qp.solve_qp(G,F,solver="osqp",initvals=np.hstack((dU0[:,0])))
+            # opt_result = qp.solve_qp(G,F,solver="ecos", verbose=True)#,initvals=np.hstack((dU0[:,0])))
             # opt_result = qp.solve_qp(self.Ge,Fe,solver="osqp",initvals=np.hstack((dU0[:,0],0)))
-            opt_result = qp.solve_qp(self.Ge,Fe,Le,self.c+W,solver="osqp",initvals=np.hstack((dU0[:,0],0)))
+            opt_result = qp.solve_qp(self.Ge,Fe,Le,self.c+W,solver="osqp",initvals=np.hstack((dU0[:,0],0)), verbose=False)
             # opt_result = qp.solve_qp(P=self.Ge,q=Fe,G=Le,h=self.c+W,solver="osqp",initvals=np.hstack((dU0[:,0],0)))
             # opt_result = qp.solve_qp(P=self.Ge,q=Fe,A=Ae,b=b,solver="osqp",initvals=np.hstack((dU0[:,0],0)))
             # opt_result = qp.solve_qp(P=self.Ge,q=Fe,G=Le,h=(self.c+W)[:,0],A=Ae,b=b[:,0],solver="osqp",initvals=np.hstack((dU0[:,0],0)))
@@ -250,6 +256,9 @@ class VelocityMpcController():
 
             # extract input from solution of QP
             dU0[:,0] = opt_result[:self.Nc*self.nu]
+
+            # log weight solution over iter and time
+            self.log_weight[self.sim_step, iteration] = (1/2*dU0.T @ G @ dU0 + F.T @ dU0)
 
             # save previous iteration of U_1
             U_1_old = np.copy(self.U_1)
@@ -306,7 +315,7 @@ class VelocityMpcController():
             # print(self.X_1.shape)
 
             # stopping condition
-            if np.linalg.norm(self.U_1 - U_1_old) < 1e-1:
+            if np.linalg.norm(self.U_1 - U_1_old) < 1e-20:
                 break
 
         self.log_iterations[self.sim_step] = iteration

@@ -19,12 +19,12 @@ ode = odeCasADiUnbalancedDisc()
 model = CasADi_model(ode, (1), dt, nx=2, nu=nu)
 
 ##################  MPC controller parameters  #######################
-Nc=10; max_iter = 5; nr_sim_steps = 20
-wlim = 5
+Nc=10; max_iter = 5; nr_sim_steps = 10
+wlim = 5 
 qlim = 1000
 nx = 2; nz = nx+ny; ne = 1
 
-Q1 = np.zeros((ny,ny)); np.fill_diagonal(Q1, [1e3])
+Q1 = np.zeros((ny,ny)); np.fill_diagonal(Q1, [1e2])
 Q2 = np.zeros((nz,nz)); Q2[ny:,ny:] = np.eye(nx)*1
 R = np.eye(nu)*0.1
 P = np.eye(ny)*0
@@ -52,6 +52,9 @@ for k in range(nr_sim_steps):
     log_w_1[:,k] = w0
 
 log_iter_y = controller_1.log_iter_y
+log_iter_u = controller_1.log_iter_u
+log_weight = controller_1.log_weight
+log_weight_old = controller_1.log_weight_old
 
 ##################  Plots  #######################
 fig2 = plt.figure(figsize=[8.9, 8])
@@ -65,16 +68,49 @@ plt.show()
 
 scaling = 6/10
 fig1 = plt.figure(figsize=[8.9*scaling, 8*scaling])
-for j in range(6):
-    plt.subplot(2,3,j+1)
+# for j in range(6):
+#     plt.subplot(2,3,j+1)
+#     for i in range(max_iter):
+#         plt.plot(log_iter_y[j,i,:], label=str(i))
+#     plt.plot(reference_theta[:Nc], 'k-.', label='reference')
+#     plt.grid()
+#     plt.legend()
+#     plt.title("sim step " + str(j+1))
+#     if j >= 3:
+#         plt.xlabel("time [s]")
+#     plt.ylabel("angle theta [rad]")
+#     plt.ylim([-2.5,3.0])
+# plt.show()
+
+plot_steps = 5
+for j in range(plot_steps):
+    plt.subplot(3,plot_steps,j+1)
     for i in range(max_iter):
-        plt.plot(log_iter_y[j,i,:], label=str(i))
-    plt.plot(reference_theta[:Nc], 'k-.', label='reference')
+        plt.plot(np.arange(Nc)*dt, log_iter_u[j,i,:], label="iter " + str(i))
+    plt.grid()
+    plt.title("sim step " + str(j+1))
+    plt.xlabel("time [s]")
+    plt.ylabel("voltage [V]")
+    plt.legend()
+    
+    plt.subplot(3,plot_steps,j+plot_steps+1)
+    for i in range(max_iter):
+        plt.plot(np.arange(Nc)*dt, log_iter_y[j,i,:], label="iter " + str(i))
+    plt.plot(np.arange(Nc)*dt, reference_theta[:Nc], 'k-.', label='reference')
     plt.grid()
     plt.legend()
-    plt.title("sim step " + str(j+1))
-    if j >= 3:
-        plt.xlabel("time [s]")
     plt.ylabel("angle theta [rad]")
-    plt.ylim([-2.5,3.0])
+    plt.xlabel("time [s]")
+    # plt.ylim([-2.5,3.0])
+
+    plt.subplot(3,plot_steps,j+2*plot_steps+1)
+    plt.plot(log_weight[j,:], label="optimal trajectory cost")
+    plt.plot(log_weight_old[j,:], label="factorization trajectory cost")
+    plt.grid()
+    plt.legend()
+    plt.ylabel("min cost J")
+    plt.xlabel("iteration")
+
+
+
 plt.show()
